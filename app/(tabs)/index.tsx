@@ -1,98 +1,112 @@
-import { Image } from 'expo-image';
-import { Platform, StyleSheet } from 'react-native';
+import * as Location from 'expo-location';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import LocationModal, { DisplayLocation } from '../../components/LocationModal';
+import SensoryMap from '../../components/SensoryMap';
+import { supabase } from '../../lib/supabase';
 
-import { HelloWave } from '@/components/hello-wave';
-import ParallaxScrollView from '@/components/parallax-scroll-view';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Link } from 'expo-router';
+export default function MapScreen() {
+  const [locations, setLocations] = useState<DisplayLocation[]>([]);
+  const [selectedLocation, setSelectedLocation] = useState<DisplayLocation | null>(null);
+  const [region, setRegion] = useState<{
+    latitude: number;
+    longitude: number;
+    latitudeDelta: number;
+    longitudeDelta: number;
+  } | null>(null);
 
-export default function HomeScreen() {
+  useEffect(() => {
+    (async () => {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        // Default to somewhere if permission denied (e.g., NY)
+        setRegion({
+            latitude: 40.7128,
+            longitude: -74.0060,
+            latitudeDelta: 0.0922,
+            longitudeDelta: 0.0421,
+        });
+        return;
+      }
+
+      let location = await Location.getCurrentPositionAsync({});
+      setRegion({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude,
+        latitudeDelta: 0.0922,
+        longitudeDelta: 0.0421,
+      });
+    })();
+
+    fetchLocations();
+  }, []);
+
+  const fetchLocations = async () => {
+    // We expect Supabase to return 'coords' as GeoJSON object automatically for geography columns
+    const { data, error } = await supabase.from('locations').select('*');
+    
+    if (error) {
+        console.error('Error fetching locations:', error);
+        return;
+    }
+
+    if (data) {
+        // Parse data and extract lat/long
+        const mapped = data.map((loc: any) => {
+            let lat = 0;
+            let lon = 0;
+            
+            // Handle GeoJSON structure: { type: 'Point', coordinates: [lon, lat] }
+            if (loc.coords && loc.coords.coordinates) {
+                 lon = loc.coords.coordinates[0];
+                 lat = loc.coords.coordinates[1];
+            } else if (typeof loc.coords === 'string') {
+                 // Fallback if it comes as string (shouldn't with standard supabase-js)
+            }
+
+            return {
+                ...loc,
+                latitude: lat,
+                longitude: lon,
+            };
+        });
+        setLocations(mapped);
+    }
+  };
+
+  const getPinColor = (sound: number) => {
+    if (sound < 3) return 'green';
+    if (sound > 7) return 'red';
+    return 'yellow'; 
+  };
+
+  if (!region) {
+      return (
+          <View style={[styles.container, styles.loading]}>
+              <ActivityIndicator size="large" color="#2f95dc" />
+          </View>
+      );
+  }
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12',
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <Link href="/modal">
-          <Link.Trigger>
-            <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-          </Link.Trigger>
-          <Link.Preview />
-          <Link.Menu>
-            <Link.MenuAction title="Action" icon="cube" onPress={() => alert('Action pressed')} />
-            <Link.MenuAction
-              title="Share"
-              icon="square.and.arrow.up"
-              onPress={() => alert('Share pressed')}
-            />
-            <Link.Menu title="More" icon="ellipsis">
-              <Link.MenuAction
-                title="Delete"
-                icon="trash"
-                destructive
-                onPress={() => alert('Delete pressed')}
-              />
-            </Link.Menu>
-          </Link.Menu>
-        </Link>
+    <View style={styles.container}>
+      <SensoryMap
+        region={region}
+        locations={locations}
+        onSelectLocation={setSelectedLocation}
+        getPinColor={getPinColor}
+      />
 
-        <ThemedText>
-          {`Tap the Explore tab to learn more about what's included in this starter app.`}
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          {`When you're ready, run `}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+      <LocationModal
+        visible={!!selectedLocation}
+        location={selectedLocation}
+        onClose={() => setSelectedLocation(null)}
+      />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
-  },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
-    position: 'absolute',
-  },
+  container: { flex: 1 },
+  loading: { justifyContent: 'center', alignItems: 'center' }
 });
