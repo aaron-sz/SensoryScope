@@ -11,10 +11,11 @@ export default function TabLayout() {
       tabBar={(props) => <FloatingTabBar {...props} />}
       screenOptions={{ headerShown: false }}
     >
-      <Tabs.Screen name="index"   options={{ title: 'Map' }} />
-      <Tabs.Screen name="submit"  options={{ title: 'Rate' }} />
+      <Tabs.Screen name="index" options={{ title: 'Map' }} />
+      <Tabs.Screen name="submit" options={{ title: 'Rate' }} />
+      <Tabs.Screen name="detect" options={{ title: 'Detect' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
-      {/* Hide any extra files that live in (tabs)/ from appearing as tabs */}
+      {/* Hide extra files from appearing as tabs */}
       <Tabs.Screen name="explore" options={{ href: null }} />
     </Tabs>
   );

@@ -1,25 +1,28 @@
-import React from 'react';
+import React, { forwardRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { Colors } from '../constants/theme';
 import { DisplayLocation } from './LocationModal';
 
 type Props = {
   region: any;
   locations: DisplayLocation[];
+  selectedId: number | null;
   onSelectLocation: (loc: DisplayLocation) => void;
-  getPinColor: (sound: number) => string;
 };
 
-export default function SensoryMap(props: Props) {
+const SensoryMap = forwardRef(function SensoryMap(_props: Props, _ref: any) {
   return (
     <View style={styles.container}>
-      <Text style={styles.text}>Map is not supported on Web.</Text>
-      <Text style={styles.subtext}>Please run on iOS or Android.</Text>
+      <Text style={styles.text}>Map is not available on Web</Text>
+      <Text style={styles.subtext}>Please run on iOS or Android to see the map.</Text>
     </View>
   );
-}
+});
+
+export default SensoryMap;
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f0f0f0' },
-  text: { fontSize: 18, fontWeight: 'bold', color: '#333' },
-  subtext: { fontSize: 14, color: '#666', marginTop: 10 },
+  container: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Colors.bg },
+  text: { fontSize: 18, fontWeight: '700', color: Colors.primary },
+  subtext: { fontSize: 14, color: Colors.textMuted, marginTop: 10 },
 });

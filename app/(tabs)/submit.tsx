@@ -13,8 +13,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Button, Overlay, Text as RNEText } from '@rneui/themed';
 import * as Haptics from 'expo-haptics';
-import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Location from 'expo-location';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
@@ -26,7 +26,7 @@ import {
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import AnimatedSlider from '../../components/ui/AnimatedSlider';
-import { Colors, Radius, Shadows, Spacing } from '../../constants/theme';
+import { Colors, Radius, Spacing } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../_layout';
 
@@ -63,11 +63,11 @@ type ScoreState = { sound: number; light: number; crowd: number };
 export default function SubmitScreen() {
   const { session } = useAuth();
 
-  const [locations, setLocations]       = useState<any[]>([]);
-  const [locationId, setLocationId]     = useState<number | null>(null);
-  const [loading, setLoading]           = useState(false);
+  const [locations, setLocations] = useState<any[]>([]);
+  const [locationId, setLocationId] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
   const [pickerVisible, setPickerVisible] = useState(false);
-  const [success, setSuccess]           = useState(false);
+  const [success, setSuccess] = useState(false);
 
   const [scores, setScores] = useState<ScoreState>({ sound: 5, light: 5, crowd: 5 });
 
@@ -136,7 +136,7 @@ export default function SubmitScreen() {
 
     const { error } = await supabase.from('reviews').insert({
       location_id: locationId,
-      user_id:     session.user.id,
+      user_id: session.user.id,
       sound_rating: scores.sound,
       light_rating: scores.light,
       crowd_rating: scores.crowd,
@@ -156,14 +156,14 @@ export default function SubmitScreen() {
       .eq('location_id', locationId);
 
     if (reviews && reviews.length > 0) {
-      const count    = reviews.length;
+      const count = reviews.length;
       const avg = (key: string) =>
         reviews.reduce((acc: number, r: any) => acc + (r[key] ?? 0), 0) / count;
 
       await supabase.from('locations').update({
-        avg_sound:    avg('sound_rating'),
-        avg_light:    avg('light_rating'),
-        avg_crowd:    avg('crowd_rating'),
+        avg_sound: avg('sound_rating'),
+        avg_light: avg('light_rating'),
+        avg_crowd: avg('crowd_rating'),
         review_count: count,
       }).eq('id', locationId);
     }
@@ -389,12 +389,13 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.surface,
     borderRadius: Radius.md,
+    borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: Colors.border,
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: Spacing.sm + 2,
-    ...Shadows.subtle,
+    boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
   },
   overallCard: {
     borderColor: Colors.primary,
@@ -445,6 +446,7 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     backgroundColor: Colors.surface,
     borderRadius: Radius.md,
+    borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: Colors.border,
     paddingHorizontal: Spacing.md,
@@ -482,8 +484,9 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     backgroundColor: Colors.primary,
     borderRadius: Radius.lg,
+    borderCurve: 'continuous',
     paddingVertical: 16,
-    ...Shadows.glow,
+    boxShadow: '0 4px 16px rgba(15,23,42,0.18)',
   },
   submitBtnSuccess: {
     backgroundColor: Colors.calm,

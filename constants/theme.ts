@@ -1,45 +1,78 @@
+import { Platform, useColorScheme } from 'react-native';
+
 /**
- * SensoryScope Design System — Calm Minimalist Theme
- * Clean, modern, soft-white base with soothing emerald and coral accents.
+ * SensoryScope Design System — Light + Dark Theme
+ * Sensory-friendly: no harsh blacks, no neon whites. Soft, calm palettes.
  */
 
-export const Colors = {
-  // ── Backgrounds ──────────────────────────────
-  // Slightly warmer off-whites prevent "screen glare" for light-sensitive users
-  bg:       '#FCFDFD',   // Soft pure white
-  surface:  '#F4F4F5',   // Zinc-100 — cards, bottom sheets
-  elevated: '#FFFFFF',   // Pure white for floating elements to pop
-  border:   '#E4E4E7',   // Zinc-200 — subtle, almost invisible dividers
+// ── Light Mode ─────────────────────────────────────────────────────────────
+export const LightColors = {
+  bg: '#FCFDFD',
+  surface: '#F4F4F5',
+  elevated: '#FFFFFF',
+  border: '#E4E4E7',
 
-  // ── Primary (Text & UI Chrome) ───────────────
-  // Moving away from harsh black to deep Slate for softer contrast
-  primary:      '#0F172A',   // Slate-900 (Main text/headings)
-  primaryLight: '#475569',   // Slate-600 (Icons, secondary UI)
-  primaryDark:  '#020617',   // Slate-950 (High emphasis)
-  primaryGlow:  'rgba(15, 23, 42, 0.04)',
+  primary: '#0F172A',
+  primaryLight: '#475569',
+  primaryDark: '#020617',
+  primaryGlow: 'rgba(15, 23, 42, 0.04)',
 
-  // ── Accent (Premium Emerald Green) ───────────
-  // A slight shift from basic green to a more premium, calming Emerald
-  accent:      '#10B981',    // Emerald-500 (Primary buttons, active states)
-  accentLight: '#34D399',    // Emerald-400 (Hover states, light accents)
-  accentDark:  '#047857',    // Emerald-700 (Pressed states)
-  accentGlow:  'rgba(16, 185, 129, 0.15)', // Soft green glow
+  accent: '#10B981',
+  accentLight: '#34D399',
+  accentDark: '#047857',
+  accentGlow: 'rgba(16, 185, 129, 0.15)',
 
-  // ── Sensory Score Colors (The "Waze" Pins) ───
-  // Replaced aggressive traffic-light colors with softer, modern pastels
-  calm:     '#10B981', // Emerald (Quiet/Safe)
-  moderate: '#F59E0B', // Amber (Noticeable but okay)
-  intense:  '#F43F5E', // Rose/Coral (Loud/Overwhelming - softer than pure Red)
-
-  calmGlow:     'rgba(16, 185, 129, 0.12)',
+  calm: '#10B981',
+  moderate: '#F59E0B',
+  intense: '#F43F5E',
+  calmGlow: 'rgba(16, 185, 129, 0.12)',
   moderateGlow: 'rgba(245, 158, 11, 0.12)',
-  intenseGlow:  'rgba(244, 63, 94, 0.12)',
+  intenseGlow: 'rgba(244, 63, 94, 0.12)',
 
-  // ── Text ─────────────────────────────────────
-  text:      '#1E293B', // Slate-800 (Easier to read for dyslexia/visual stress)
-  textMuted: '#64748B', // Slate-500 (Captions, subtitles)
-  textDim:   '#94A3B8', // Slate-400 (Placeholder text)
+  text: '#1E293B',
+  textMuted: '#64748B',
+  textDim: '#94A3B8',
 };
+
+// ── Dark Mode ──────────────────────────────────────────────────────────────
+// Deep navy tones — easier on sensitive eyes than pure #000
+export const DarkColors: typeof LightColors = {
+  bg: '#080F1E',
+  surface: '#0F1826',
+  elevated: '#18243A',
+  border: '#1E2D40',
+
+  primary: '#F1F5F9',
+  primaryLight: '#94A3B8',
+  primaryDark: '#F8FAFC',
+  primaryGlow: 'rgba(241, 245, 249, 0.04)',
+
+  accent: '#10B981',
+  accentLight: '#34D399',
+  accentDark: '#059669',
+  accentGlow: 'rgba(16, 185, 129, 0.20)',
+
+  calm: '#10B981',
+  moderate: '#F59E0B',
+  intense: '#F43F5E',
+  calmGlow: 'rgba(16, 185, 129, 0.18)',
+  moderateGlow: 'rgba(245, 158, 11, 0.18)',
+  intenseGlow: 'rgba(244, 63, 94, 0.18)',
+
+  text: '#F1F5F9',
+  textMuted: '#94A3B8',
+  textDim: '#7A9AB8',   // Visible on dark navy — was #475569 which is near-invisible
+};
+
+
+// Default export — light mode (backwards compat for files not yet migrated)
+export const Colors = LightColors;
+
+/** Call this hook in any component to get the right color palette */
+export function useColors() {
+  const scheme = useColorScheme();
+  return scheme === 'dark' ? DarkColors : LightColors;
+}
 
 export const Spacing = {
   xs: 4,
@@ -56,6 +89,39 @@ export const Radius = {
   lg: 20,      // Perfect for bottom sheets or large cards
   xl: 28,
   pill: 999,
+};
+
+export const Fonts = {
+  // Using system fonts by default to avoid extra weight
+  regular: Platform.select({ ios: 'System', android: 'sans-serif' }),
+  medium: Platform.select({ ios: 'System', android: 'sans-serif-medium' }),
+  bold: Platform.select({ ios: 'System', android: 'sans-serif-bold' }),
+  rounded: Platform.select({ ios: 'System', android: 'sans-serif' }),
+  mono: Platform.select({ ios: 'Courier', android: 'monospace' }),
+};
+
+export const Typography = {
+  h1: {
+    fontSize: 28,
+    fontWeight: '800' as const,
+    color: Colors.text,
+    letterSpacing: -0.5,
+  },
+  h2: {
+    fontSize: 22,
+    fontWeight: '700' as const,
+    color: Colors.text,
+    letterSpacing: -0.3,
+  },
+  body: {
+    fontSize: 16,
+    color: Colors.text,
+    lineHeight: 24,
+  },
+  caption: {
+    fontSize: 13,
+    color: Colors.textMuted,
+  },
 };
 
 export const Shadows = {

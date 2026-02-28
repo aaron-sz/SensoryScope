@@ -6,10 +6,10 @@
  *  - Icon scale + glow animation on selection
  *  - Haptic feedback on every tap
  */
+import { Ionicons } from '@expo/vector-icons';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
-import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect } from 'react';
 import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
 import Animated, {
@@ -18,19 +18,21 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { Colors, Radius, Shadows, Spacing } from '../../constants/theme';
+import { Radius, Spacing, useColors } from '../../constants/theme';
 
 /** Route name → icon + label */
 const TAB_CONFIG: Record<string, { icon: keyof typeof Ionicons.glyphMap; label: string }> = {
-  index:   { icon: 'map',         label: 'Map'     },
-  submit:  { icon: 'add-circle',  label: 'Rate'    },
-  profile: { icon: 'person',      label: 'Profile' },
+  index: { icon: 'map', label: 'Map' },
+  submit: { icon: 'add-circle', label: 'Rate' },
+  detect: { icon: 'pulse', label: 'Detect' },
+  profile: { icon: 'person', label: 'Profile' },
 };
 
 const BAR_HEIGHT = 64;
 const INDICATOR_SIZE = 52;
 
 export default function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
+  const C = useColors();
   // Only render routes we have config for (hides explore, modal, etc.)
   const visibleRoutes = state.routes.filter((r) => !!TAB_CONFIG[r.name]);
   const activeVisibleIndex = visibleRoutes.findIndex(
@@ -53,7 +55,7 @@ export default function FloatingTabBar({ state, navigation }: BottomTabBarProps)
         mass: 0.8,
       });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeVisibleIndex]); // tabWidth / indicatorX are stable refs, not deps
 
   // Merge position + width into one animated style so we never read
@@ -77,7 +79,7 @@ export default function FloatingTabBar({ state, navigation }: BottomTabBarProps)
   return (
     <View style={styles.outerContainer} pointerEvents="box-none">
       <View
-        style={styles.barWrapper}
+        style={[styles.barWrapper, { borderColor: C.border }]}
         onLayout={(e) => {
           const w = e.nativeEvent.layout.width / visibleRoutes.length;
           if (tabWidth.value === 0) {
@@ -87,11 +89,11 @@ export default function FloatingTabBar({ state, navigation }: BottomTabBarProps)
           }
         }}
       >
-        {/* Frosted white background */}
+        {/* Frosted background — systemMaterial adapts to light/dark mode */}
         {Platform.OS === 'android' ? (
-          <View style={[StyleSheet.absoluteFill, styles.androidBlur]} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: C.elevated, borderRadius: Radius.pill }]} />
         ) : (
-          <BlurView intensity={80} tint="light" style={StyleSheet.absoluteFill} />
+          <BlurView intensity={90} tint="systemMaterial" style={StyleSheet.absoluteFill} />
         )}
 
         {/* Sliding active indicator pill — width + position driven by useAnimatedStyle */}
@@ -128,6 +130,7 @@ function TabButton({
   isActive: boolean;
   onPress: () => void;
 }) {
+  const C = useColors();
   const scale = useSharedValue(1);
   const opacity = useSharedValue(isActive ? 1 : 0.45);
 
@@ -146,8 +149,8 @@ function TabButton({
       <Animated.View style={[styles.tabInner, animStyle]}>
         <Ionicons
           name={isActive ? icon : (`${icon}-outline` as keyof typeof Ionicons.glyphMap)}
-          size={24}
-          color={isActive ? Colors.accent : Colors.textDim}
+          size={26}
+          color={isActive ? C.accent : C.textDim}
         />
       </Animated.View>
     </TouchableOpacity>
@@ -170,10 +173,10 @@ const styles = StyleSheet.create({
     borderRadius: Radius.pill,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: Colors.border,
+    // borderColor set dynamically via C.border in JSX
     backgroundColor: 'transparent',
     alignItems: 'center',
-    ...Shadows.card,
+    boxShadow: '0 4px 24px rgba(0,0,0,0.14)',
     width: '100%',
   },
   androidBlur: {
@@ -186,10 +189,11 @@ const styles = StyleSheet.create({
     bottom: 6,
     left: 6,
     zIndex: 0,
-    backgroundColor: Colors.accentGlow,
+    backgroundColor: 'rgba(16, 185, 129, 0.14)',
     borderRadius: Radius.pill,
+    borderCurve: 'continuous',
     borderWidth: 1,
-    borderColor: Colors.accentDark,
+    borderColor: 'rgba(4, 120, 87, 0.25)',
   },
   tab: {
     flex: 1,

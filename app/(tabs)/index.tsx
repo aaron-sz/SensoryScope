@@ -16,15 +16,17 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  View,
+  View
 } from 'react-native';
-import MapView from 'react-native-maps';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LocationModal, { DisplayLocation } from '../../components/LocationModal';
 import PlaceSearchBar from '../../components/PlaceSearchBar';
-import SensoryMap from '../../components/SensoryMap.native';
-import { Colors, Shadows, Spacing } from '../../constants/theme';
+import { Colors, Shadows, Spacing, useColors } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
+
+// @ts-ignore — Metro resolves SensoryMap.native.tsx / .web.tsx by platform
+import SensoryMap from '../../components/SensoryMap';
 
 type Region = {
   latitude: number;
@@ -41,12 +43,14 @@ const NC_DEFAULT: Region = {
 };
 
 export default function MapScreen() {
-  const mapRef = useRef<MapView>(null);
-  const [locations, setLocations]             = useState<DisplayLocation[]>([]);
+  const mapRef = useRef<any>(null);
+  const insets = useSafeAreaInsets();
+  const C = useColors();
+  const [locations, setLocations] = useState<DisplayLocation[]>([]);
   const [selectedLocation, setSelectedLocation] = useState<DisplayLocation | null>(null);
-  const [region, setRegion]                   = useState<Region | null>(null);
-  const [loading, setLoading]                 = useState(true);
-  const [refreshing, setRefreshing]           = useState(false);
+  const [region, setRegion] = useState<Region | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     initLocation();
@@ -66,9 +70,9 @@ export default function MapScreen() {
         accuracy: Location.Accuracy.Balanced,
       });
       setRegion({
-        latitude:       loc.coords.latitude,
-        longitude:      loc.coords.longitude,
-        latitudeDelta:  0.08,
+        latitude: loc.coords.latitude,
+        longitude: loc.coords.longitude,
+        latitudeDelta: 0.08,
         longitudeDelta: 0.08,
       });
     } catch (e) {
@@ -128,9 +132,9 @@ export default function MapScreen() {
 
   if (loading || !region) {
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Colors.primary} />
-        <Text style={styles.loadingText}>Finding your location…</Text>
+      <View style={[styles.loadingContainer, { backgroundColor: C.bg }]}>
+        <ActivityIndicator size="large" color={C.accent} />
+        <Text style={[styles.loadingText, { color: C.textMuted }]}>Finding your location…</Text>
       </View>
     );
   }
@@ -147,18 +151,18 @@ export default function MapScreen() {
       />
 
       {/* ── Frosted header ── */}
-      <View style={styles.headerOverlay} pointerEvents="box-none">
-        <View style={styles.headerCard}>
+      <View style={[styles.headerOverlay, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
+        <View style={[styles.headerCard, { backgroundColor: C.elevated, borderColor: C.border }]}>
           <View>
-            <Text style={styles.headerTitle}>SensoryScope</Text>
-            <Text style={styles.headerSub}>
+            <Text style={[styles.headerTitle, { color: C.text }]}>SensoryScope</Text>
+            <Text style={[styles.headerSub, { color: C.textMuted }]}>
               {locations.length} place{locations.length !== 1 ? 's' : ''} rated nearby
             </Text>
           </View>
-          <Pressable onPress={fetchLocations} style={styles.iconBtn} hitSlop={10}>
+          <Pressable onPress={fetchLocations} style={[styles.iconBtn, { backgroundColor: C.surface, borderColor: C.border }]} hitSlop={10}>
             {refreshing
-              ? <ActivityIndicator size="small" color={Colors.primaryLight} />
-              : <Ionicons name="refresh" size={20} color={Colors.primaryLight} />
+              ? <ActivityIndicator size="small" color={C.accent} />
+              : <Ionicons name="refresh" size={20} color={C.accent} />
             }
           </Pressable>
         </View>

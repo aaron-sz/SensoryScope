@@ -78,7 +78,7 @@ export default function LocationModal({ location, onClose }: Props) {
     const label = encodeURIComponent(location.name);
     const googleUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
     const nativeUrl = Platform.select({
-      ios:     `maps:0,0?q=${label}@${lat},${lng}`,
+      ios: `maps:0,0?q=${label}@${lat},${lng}`,
       android: `geo:0,0?q=${lat},${lng}(${label})`,
     })!;
 
@@ -160,7 +160,7 @@ function ScoreRing({ score }: { score: number }) {
 /* ---------- MetricBar ---------- */
 function MetricBar({ label, value, delay }: { label: string; value: number; delay: number }) {
   const color = scoreColor(value);
-  const fill  = useSharedValue(0);
+  const fill = useSharedValue(0);
 
   useEffect(() => {
     fill.value = withDelay(delay, withTiming((value / 10) * 100, { duration: 600 }));
@@ -196,8 +196,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.lg,
     borderTopWidth: 1,
-    borderColor: Colors.border,
-    ...Shadows.glow,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: 'rgba(0,0,0,0.06)',
+    boxShadow: '0 -8px 40px rgba(0,0,0,0.08)',
   },
   handle: {
     width: 40,
@@ -257,6 +259,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: '800',
     letterSpacing: -0.5,
+    fontVariant: ['tabular-nums'],
   },
   scoreLabel: {
     fontSize: 9,
@@ -301,8 +304,9 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
     backgroundColor: Colors.primary,
     borderRadius: Radius.lg,
+    borderCurve: 'continuous',
     paddingVertical: 14,
-    ...Shadows.card,
+    boxShadow: '0 2px 12px rgba(0,0,0,0.12)',
   },
   navText: {
     color: Colors.bg,
