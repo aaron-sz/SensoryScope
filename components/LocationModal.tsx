@@ -1,6 +1,31 @@
-import { Button, Icon, Overlay } from '@rneui/themed';
-import React from 'react';
-import { Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+/**
+ * LocationModal — Animated Bottom Sheet
+ *
+ * Renders as an absolutely-positioned sheet that slides up from the
+ * bottom of the map screen when a pin is tapped.
+ *
+ * Features:
+ *  - Reanimated SlideInDown / SlideOutDown layout animations
+ *  - Pan gesture: drag down > 120px dismisses the sheet
+ *  - Staggered metric bar fill animations on open
+ *  - Large circular sensory score display
+ *  - Navigate button that opens the device maps app
+ */
+import { Ionicons } from '@expo/vector-icons';
+import React, { useEffect } from 'react';
+import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  runOnJS,
+  SlideInDown,
+  SlideOutDown,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
+import { Colors, Radius, scoreColor, Shadows, Spacing } from '../constants/theme';
 
 export type DisplayLocation = {
   id: number;
@@ -14,100 +39,275 @@ export type DisplayLocation = {
   longitude: number;
 };
 
-type LocationModalProps = {
-  visible: boolean;
-  location: DisplayLocation | null;
+type Props = {
+  location: DisplayLocation;
   onClose: () => void;
 };
 
-export default function LocationModal({ visible, location, onClose }: LocationModalProps) {
-  if (!location) return null;
+export default function LocationModal({ location, onClose }: Props) {
+  const overallScore = (location.avg_sound + location.avg_light + location.avg_crowd) / 3;
+  const sheetY = useSharedValue(0);
 
-  const safetyScore = (
-    (location.avg_sound + location.avg_light + location.avg_crowd) / 3
-  ).toFixed(1);
+  // Reset sheet position on each open
+  useEffect(() => {
+    sheetY.value = 0;
+  }, [location.id]);
+
+  // Pan gesture — drag down to dismiss
+  const panGesture = Gesture.Pan()
+    .onChange((e) => {
+      'worklet';
+      if (e.translationY > 0) sheetY.value = e.translationY;
+    })
+    .onEnd((e) => {
+      'worklet';
+      if (e.translationY > 120) {
+        runOnJS(onClose)();
+      } else {
+        sheetY.value = withSpring(0, { damping: 20, stiffness: 260 });
+      }
+    });
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: sheetY.value }],
+  }));
 
   const handleNavigate = () => {
-    const scheme = Platform.select({ ios: 'maps:0,0?q=', android: 'geo:0,0?q=' });
-    const latLng = `${location.latitude},${location.longitude}`;
-    const label = location.name;
-    const url = Platform.select({
-      ios: `${scheme}${label}@${latLng}`,
-      android: `${scheme}${latLng}(${label})`
-    });
-    
-    const googleMapsUrl = `https://www.google.com/maps/search/?api=1&query=${location.latitude},${location.longitude}`;
+    const lat = location.latitude;
+    const lng = location.longitude;
+    const label = encodeURIComponent(location.name);
+    const googleUrl = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+    const nativeUrl = Platform.select({
+      ios:     `maps:0,0?q=${label}@${lat},${lng}`,
+      android: `geo:0,0?q=${lat},${lng}(${label})`,
+    })!;
 
-    Linking.canOpenURL(url!).then(supported => {
-        if (supported) {
-            Linking.openURL(url!);
-        } else {
-            Linking.openURL(googleMapsUrl);
-        }
-    });
+    Linking.canOpenURL(nativeUrl).then((ok) =>
+      Linking.openURL(ok ? nativeUrl : googleUrl)
+    );
   };
 
-  const getColor = (val: number) => {
-    if (val < 3) return '#4caf50'; // Green
-    if (val > 7) return '#f44336'; // Red
-    return '#ff9800'; // Orange
-  }
-
   return (
-    <Overlay isVisible={visible} onBackdropPress={onClose} overlayStyle={styles.overlay}>
-      <View style={styles.header}>
-        <Text style={styles.title}>{location.name}</Text>
-        <TouchableOpacity onPress={onClose}>
-          <Icon name="close" type="ionicon" size={24} />
-        </TouchableOpacity>
-      </View>
+    <Animated.View
+      entering={SlideInDown.springify().damping(22).stiffness(240)}
+      exiting={SlideOutDown.springify().damping(22).stiffness(240)}
+      style={styles.sheet}
+    >
+      {/* Drag handle */}
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={[styles.sheetInner, sheetStyle]}>
+          <View style={styles.handle} />
 
-      <Text style={styles.description}>{location.description || 'No description available.'}</Text>
+          {/* Header row */}
+          <View style={styles.header}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.locationName} numberOfLines={1}>
+                {location.name}
+              </Text>
+              <Text style={styles.reviewCount}>
+                {location.review_count ?? 0} rating{location.review_count !== 1 ? 's' : ''}
+              </Text>
+            </View>
+            <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={12}>
+              <Ionicons name="close" size={20} color={Colors.textMuted} />
+            </Pressable>
+          </View>
 
-      <View style={styles.metricsContainer}>
-        <MetricRow label="Quietness" value={location.avg_sound} color={getColor(location.avg_sound)} />
-        <MetricRow label="Lighting" value={location.avg_light} color={getColor(location.avg_light)} />
-        <MetricRow label="Crowd" value={location.avg_crowd} color={getColor(location.avg_crowd)} />
-      </View>
+          {/* Description */}
+          {!!location.description && (
+            <Text style={styles.description} numberOfLines={2}>
+              {location.description}
+            </Text>
+          )}
 
-      <View style={styles.scoreContainer}>
-        <Text style={styles.scoreLabel}>Sensory Score</Text>
-        <Text style={styles.scoreValue}>{safetyScore}</Text>
-      </View>
+          {/* Score ring + metric bars */}
+          <View style={styles.contentRow}>
+            {/* Big score circle */}
+            <ScoreRing score={overallScore} />
 
-      <Button
-        title="Navigate"
-        onPress={handleNavigate}
-        icon={{ name: 'navigate', type: 'ionicon', color: 'white' }}
-        buttonStyle={styles.navigateButton}
-      />
-    </Overlay>
+            {/* Individual metric bars */}
+            <View style={{ flex: 1, paddingLeft: Spacing.lg }}>
+              <MetricBar label="Sound" value={location.avg_sound} delay={0} />
+              <MetricBar label="Light" value={location.avg_light} delay={80} />
+              <MetricBar label="Crowd" value={location.avg_crowd} delay={160} />
+            </View>
+          </View>
+
+          {/* Navigate CTA */}
+          <Pressable style={styles.navButton} onPress={handleNavigate}>
+            <Ionicons name="navigate" size={18} color={Colors.bg} />
+            <Text style={styles.navText}>Navigate</Text>
+          </Pressable>
+        </Animated.View>
+      </GestureDetector>
+    </Animated.View>
   );
 }
 
-const MetricRow = ({ label, value, color }: { label: string; value: number; color: string }) => (
-  <View style={styles.metricRow}>
-    <Text style={styles.metricLabel}>{label}</Text>
-    <View style={styles.barContainer}>
-       <View style={[styles.barFill, { width: `${(value / 10) * 100}%`, backgroundColor: color }]} />
+/* ---------- ScoreRing ---------- */
+function ScoreRing({ score }: { score: number }) {
+  const color = scoreColor(score);
+  const label = score <= 3 ? 'Calm' : score <= 6 ? 'Moderate' : 'Intense';
+
+  return (
+    <View style={[styles.scoreRing, { borderColor: color, ...Shadows.card, shadowColor: color }]}>
+      <Text style={[styles.scoreNumber, { color }]}>{score.toFixed(1)}</Text>
+      <Text style={[styles.scoreLabel, { color }]}>{label}</Text>
     </View>
-    <Text style={styles.metricValue}>{value.toFixed(1)}</Text>
-  </View>
-);
+  );
+}
+
+/* ---------- MetricBar ---------- */
+function MetricBar({ label, value, delay }: { label: string; value: number; delay: number }) {
+  const color = scoreColor(value);
+  const fill  = useSharedValue(0);
+
+  useEffect(() => {
+    fill.value = withDelay(delay, withTiming((value / 10) * 100, { duration: 600 }));
+    return () => { fill.value = 0; };
+  }, [value, delay]);
+
+  const barStyle = useAnimatedStyle(() => ({ width: `${fill.value}%` as any }));
+
+  return (
+    <View style={styles.metricRow}>
+      <Text style={styles.metricLabel}>{label}</Text>
+      <View style={styles.trackBg}>
+        <Animated.View style={[styles.trackFill, barStyle, { backgroundColor: color }]} />
+      </View>
+      <Text style={[styles.metricValue, { color }]}>{value.toFixed(1)}</Text>
+    </View>
+  );
+}
 
 const styles = StyleSheet.create({
-  overlay: { width: '90%', padding: 20, borderRadius: 15 },
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
-  title: { fontSize: 22, fontWeight: 'bold' },
-  description: { fontSize: 14, color: '#666', marginBottom: 20 },
-  metricsContainer: { marginBottom: 20 },
-  metricRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
-  metricLabel: { width: 80, fontSize: 14, fontWeight: '500' },
-  barContainer: { flex: 1, height: 10, backgroundColor: '#f0f0f0', marginHorizontal: 10, borderRadius: 5, overflow: 'hidden' },
-  barFill: { height: '100%', borderRadius: 5 },
-  metricValue: { width: 30, textAlign: 'right', fontSize: 14, fontWeight: 'bold' },
-  scoreContainer: { alignItems: 'center', marginBottom: 20 },
-  scoreLabel: { fontSize: 16, fontWeight: '600', color: '#888' },
-  scoreValue: { fontSize: 48, fontWeight: 'bold', color: '#2f95dc' },
-  navigateButton: { backgroundColor: '#2f95dc', borderRadius: 10, paddingVertical: 12 },
+  sheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    // Leave room for the floating tab bar (≈100px)
+    paddingBottom: 100,
+  },
+  sheetInner: {
+    backgroundColor: Colors.surface,
+    borderTopLeftRadius: Radius.xl,
+    borderTopRightRadius: Radius.xl,
+    paddingHorizontal: Spacing.lg,
+    paddingBottom: Spacing.lg,
+    borderTopWidth: 1,
+    borderColor: Colors.border,
+    ...Shadows.glow,
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: Radius.pill,
+    backgroundColor: Colors.border,
+    alignSelf: 'center',
+    marginVertical: Spacing.sm + 2,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: Spacing.xs,
+  },
+  locationName: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: Colors.text,
+    letterSpacing: 0.2,
+  },
+  reviewCount: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  closeBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.elevated,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: Spacing.sm,
+    marginTop: 2,
+  },
+  description: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    marginBottom: Spacing.md,
+    lineHeight: 18,
+  },
+  contentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.md,
+  },
+  scoreRing: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 3,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.elevated,
+  },
+  scoreNumber: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  scoreLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginTop: 1,
+  },
+  metricRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  metricLabel: {
+    width: 44,
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.textMuted,
+  },
+  trackBg: {
+    flex: 1,
+    height: 6,
+    backgroundColor: Colors.elevated,
+    borderRadius: Radius.pill,
+    marginHorizontal: Spacing.sm,
+    overflow: 'hidden',
+  },
+  trackFill: {
+    height: '100%',
+    borderRadius: Radius.pill,
+  },
+  metricValue: {
+    width: 28,
+    fontSize: 11,
+    fontWeight: '700',
+    textAlign: 'right',
+  },
+  navButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.lg,
+    paddingVertical: 14,
+    ...Shadows.card,
+  },
+  navText: {
+    color: Colors.bg,
+    fontSize: 15,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
 });

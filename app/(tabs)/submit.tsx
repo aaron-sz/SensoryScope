@@ -1,216 +1,544 @@
-import { Button, Icon, ListItem, Overlay, Slider, Text } from '@rneui/themed';
+/**
+ * Submit / Rating Screen
+ *
+ * Fully redesigned with:
+ *  - Dark gradient background
+ *  - Live sensory score preview cards that update as sliders move
+ *  - Custom AnimatedSlider components (gradient track, haptic ticks)
+ *  - Staggered FadeInDown entrance animations for each section
+ *  - Location picker overlay (RNEUI) + "Find Nearest" GPS button
+ *  - Submit button with loading → success animation
+ *  - Supabase review insert + location average recalculation
+ */
+import { Ionicons } from '@expo/vector-icons';
+import { Button, Overlay, Text as RNEText } from '@rneui/themed';
+import * as Haptics from 'expo-haptics';
 import * as Location from 'expo-location';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, View } from 'react-native';
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import AnimatedSlider from '../../components/ui/AnimatedSlider';
+import { Colors, Radius, Shadows, Spacing } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../_layout';
 
+/* Sensory category config — drives slider gradient + label */
+const CATEGORIES = [
+  {
+    key: 'sound' as const,
+    label: 'Sound Level',
+    leftLabel: 'Quiet',
+    rightLabel: 'Loud',
+    gradientColors: ['#34D399', '#FBBF24', '#F87171'] as [string, string, string],
+    icon: 'volume-medium' as const,
+  },
+  {
+    key: 'light' as const,
+    label: 'Light Level',
+    leftLabel: 'Dim',
+    rightLabel: 'Bright',
+    gradientColors: ['#22D3EE', '#FBBF24', '#F87171'] as [string, string, string],
+    icon: 'sunny' as const,
+  },
+  {
+    key: 'crowd' as const,
+    label: 'Crowd Level',
+    leftLabel: 'Empty',
+    rightLabel: 'Packed',
+    gradientColors: ['#34D399', '#FBBF24', '#F87171'] as [string, string, string],
+    icon: 'people' as const,
+  },
+];
+
+type ScoreState = { sound: number; light: number; crowd: number };
+
 export default function SubmitScreen() {
   const { session } = useAuth();
-  const [locations, setLocations] = useState<any[]>([]);
-  const [locationId, setLocationId] = useState<number | null>(null);
-  const [loading, setLoading] = useState(false);
+
+  const [locations, setLocations]       = useState<any[]>([]);
+  const [locationId, setLocationId]     = useState<number | null>(null);
+  const [loading, setLoading]           = useState(false);
   const [pickerVisible, setPickerVisible] = useState(false);
+  const [success, setSuccess]           = useState(false);
 
-  const [sound, setSound] = useState(5);
-  const [light, setLight] = useState(5);
-  const [crowd, setCrowd] = useState(5);
+  const [scores, setScores] = useState<ScoreState>({ sound: 5, light: 5, crowd: 5 });
 
-  useEffect(() => {
-    fetchLocations();
-    // Refresh locations when screen is focused? For now on mount.
-  }, []);
+  useEffect(() => { fetchLocations(); }, []);
 
   const fetchLocations = async () => {
-    const { data } = await supabase.from('locations').select('*');
+    const { data, error } = await supabase.from('locations').select('*');
+    if (error) {
+      console.error('Error fetching locations:', error.code, '|', error.message, '|', error.details, '|', error.hint);
+    }
     if (data) setLocations(data);
   };
 
+  const setScore = (key: keyof ScoreState) => (val: number) =>
+    setScores((prev) => ({ ...prev, [key]: val }));
+
   const findNearest = async () => {
     setLoading(true);
-    let { status } = await Location.requestForegroundPermissionsAsync();
-    if (status !== 'granted') {
-        Alert.alert('Permission denied', 'Need location to find nearest spot.');
-        setLoading(false);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission denied', 'Location access is needed to find the nearest spot.');
         return;
+      }
+      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude, longitude } = loc.coords;
+
+      const withCoords = locations.map((l) => {
+        let lat = 0, lon = 0;
+        if (l.coords?.coordinates) { lon = l.coords.coordinates[0]; lat = l.coords.coordinates[1]; }
+        return { ...l, lat, lon };
+      });
+
+      withCoords.sort((a, b) => {
+        const dA = Math.hypot(a.lat - latitude, a.lon - longitude);
+        const dB = Math.hypot(b.lat - latitude, b.lon - longitude);
+        return dA - dB;
+      });
+
+      if (withCoords.length > 0) {
+        setLocationId(withCoords[0].id);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert('Nearest location', `Selected: ${withCoords[0].name}`);
+      } else {
+        Alert.alert('No locations', 'No locations found in the database yet.');
+      }
+    } catch (e) {
+      console.warn('Could not get location:', e);
+      Alert.alert('Location unavailable', 'Make sure location services are enabled.');
+    } finally {
+      setLoading(false);
     }
-    let loc = await Location.getCurrentPositionAsync({});
-    const { latitude, longitude } = loc.coords;
-
-    // Parse coordinates and sort by distance client-side
-    const validLocations = locations.map(l => {
-       let lat = 0, lon = 0;
-       if (l.coords && l.coords.coordinates) {
-          lon = l.coords.coordinates[0];
-          lat = l.coords.coordinates[1];
-       } else if (typeof l.coords === 'string') {
-          // Handle WKT or other string if needed, currently assuming GeoJSON object
-       }
-       return { ...l, lat, lon };
-    });
-
-    validLocations.sort((a, b) => {
-        const distA = Math.sqrt(Math.pow(a.lat - latitude, 2) + Math.pow(a.lon - longitude, 2));
-        const distB = Math.sqrt(Math.pow(b.lat - latitude, 2) + Math.pow(b.lon - longitude, 2));
-        return distA - distB;
-    });
-
-    if (validLocations.length > 0) {
-        setLocationId(validLocations[0].id);
-        Alert.alert('Nearest Location', `Selected: ${validLocations[0].name}`);
-    } else {
-        Alert.alert('No locations found');
-    }
-    setLoading(false);
   };
 
   const submitReview = async () => {
     if (!session) {
-        Alert.alert('Authentication Required', 'Please sign in from the Profile tab to submit a review.');
-        return;
+      Alert.alert('Sign in required', 'Head to the Profile tab to sign in before submitting.');
+      return;
     }
     if (!locationId) {
-        Alert.alert('Select Location', 'Please select a location to review.');
-        return;
+      Alert.alert('Select a location', 'Choose a location above before submitting.');
+      return;
     }
 
     setLoading(true);
 
     const { error } = await supabase.from('reviews').insert({
-        location_id: locationId,
-        user_id: session.user.id,
-        sound_rating: sound,
-        light_rating: light,
-        crowd_rating: crowd,
-        comment: '', // Optional comment
+      location_id: locationId,
+      user_id:     session.user.id,
+      sound_rating: scores.sound,
+      light_rating: scores.light,
+      crowd_rating: scores.crowd,
+      comment: '',
     });
 
     if (error) {
-        Alert.alert('Submission Error', error.message);
-        setLoading(false);
-        return;
+      Alert.alert('Submission error', error.message);
+      setLoading(false);
+      return;
     }
 
-    // Update location averages
-    // Fetch all reviews for this location to recalculate
+    // Recalculate averages for this location
     const { data: reviews } = await supabase
-        .from('reviews')
-        .select('sound_rating, light_rating, crowd_rating')
-        .eq('location_id', locationId);
-    
-    if (reviews && reviews.length > 0) {
-        const count = reviews.length;
-        const avgSound = reviews.reduce((acc, curr) => acc + (curr.sound_rating || 0), 0) / count;
-        const avgLight = reviews.reduce((acc, curr) => acc + (curr.light_rating || 0), 0) / count;
-        const avgCrowd = reviews.reduce((acc, curr) => acc + (curr.crowd_rating || 0), 0) / count;
+      .from('reviews')
+      .select('sound_rating, light_rating, crowd_rating')
+      .eq('location_id', locationId);
 
-        await supabase.from('locations').update({
-            avg_sound: avgSound,
-            avg_light: avgLight,
-            avg_crowd: avgCrowd,
-            review_count: count
-        }).eq('id', locationId);
+    if (reviews && reviews.length > 0) {
+      const count    = reviews.length;
+      const avg = (key: string) =>
+        reviews.reduce((acc: number, r: any) => acc + (r[key] ?? 0), 0) / count;
+
+      await supabase.from('locations').update({
+        avg_sound:    avg('sound_rating'),
+        avg_light:    avg('light_rating'),
+        avg_crowd:    avg('crowd_rating'),
+        review_count: count,
+      }).eq('id', locationId);
     }
 
     setLoading(false);
-    Alert.alert('Success', 'Thank you for your contribution!');
-    
-    // Reset defaults
-    setSound(5);
-    setLight(5);
-    setCrowd(5);
-    setLocationId(null);
+    setSuccess(true);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    setTimeout(() => {
+      setSuccess(false);
+      setScores({ sound: 5, light: 5, crowd: 5 });
+      setLocationId(null);
+    }, 2200);
   };
 
-  const selectedLocName = locations.find(l => l.id === locationId)?.name || 'Select Location';
+  const selectedName = locations.find((l) => l.id === locationId)?.name ?? null;
+  const overallPreview = ((scores.sound + scores.light + scores.crowd) / 3).toFixed(1);
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
-      <Text h4 style={styles.header}>Rate a Place</Text>
+    <LinearGradient
+      colors={[Colors.bg, Colors.surface, Colors.bg]}
+      style={styles.gradient}
+    >
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        {/* ── Title ── */}
+        <Animated.View entering={FadeInDown.delay(0).springify().damping(20)}>
+          <Text style={styles.screenTitle}>Rate a Place</Text>
+          <Text style={styles.screenSub}>Help others find sensory-friendly spaces</Text>
+        </Animated.View>
 
-      <View style={styles.selectionContainer}>
-         <Button 
-            title={selectedLocName} 
-            onPress={() => setPickerVisible(true)} 
-            type="outline" 
-            buttonStyle={styles.selectBtn}
-            titleStyle={{color: '#333'}}
-         />
-         <View style={styles.orDivider}>
-             <Text style={{color:'#888'}}>OR</Text>
-         </View>
-         <Button 
-            title="Find Nearest to Me" 
-            onPress={findNearest} 
-            icon={{name:'location', type:'ionicon', color:'white', size: 18}} 
-            buttonStyle={styles.nearestBtn}
-         />
-      </View>
+        {/* ── Live score preview ── */}
+        <Animated.View entering={FadeInDown.delay(80).springify().damping(20)} style={styles.previewRow}>
+          {CATEGORIES.map((cat) => (
+            <ScoreCard
+              key={cat.key}
+              icon={cat.icon}
+              label={cat.label.split(' ')[0]}
+              value={scores[cat.key]}
+            />
+          ))}
+          {/* Overall */}
+          <View style={[styles.scoreCard, styles.overallCard]}>
+            <Text style={styles.overallValue}>{overallPreview}</Text>
+            <Text style={styles.scoreCardLabel}>Overall</Text>
+          </View>
+        </Animated.View>
 
-      <View style={styles.sliderSection}>
-        <View style={styles.sliderContainer}>
-            <Text style={styles.sliderLabel}>Sound Level: {sound}</Text>
-            <Slider value={sound} onValueChange={setSound} maximumValue={10} minimumValue={0} step={1} thumbTintColor="#2f95dc" minimumTrackTintColor="#2f95dc" />
-            <View style={styles.scaleLabels}><Text style={styles.tinyLabel}>Quiet</Text><Text style={styles.tinyLabel}>Loud</Text></View>
+        {/* ── Location picker ── */}
+        <Animated.View entering={FadeInDown.delay(160).springify().damping(20)} style={styles.section}>
+          <Text style={styles.sectionLabel}>Location</Text>
+          <View style={styles.locationRow}>
+            <Pressable
+              style={[styles.locationBtn, selectedName ? styles.locationBtnActive : null]}
+              onPress={() => setPickerVisible(true)}
+            >
+              <Ionicons
+                name="location"
+                size={16}
+                color={selectedName ? Colors.primaryLight : Colors.textMuted}
+              />
+              <Text
+                style={[styles.locationBtnText, selectedName ? styles.locationBtnTextActive : null]}
+                numberOfLines={1}
+              >
+                {selectedName ?? 'Choose location…'}
+              </Text>
+              <Ionicons name="chevron-down" size={14} color={Colors.textDim} />
+            </Pressable>
+
+            <Pressable style={styles.nearestBtn} onPress={findNearest} disabled={loading}>
+              <Ionicons name="navigate" size={16} color={Colors.accent} />
+            </Pressable>
+          </View>
+        </Animated.View>
+
+        {/* ── Sliders ── */}
+        <Animated.View entering={FadeInDown.delay(240).springify().damping(20)} style={styles.section}>
+          <Text style={styles.sectionLabel}>Sensory Ratings</Text>
+          {CATEGORIES.map((cat) => (
+            <AnimatedSlider
+              key={cat.key}
+              label={cat.label}
+              value={scores[cat.key]}
+              onValueChange={setScore(cat.key)}
+              min={1}
+              max={10}
+              leftLabel={cat.leftLabel}
+              rightLabel={cat.rightLabel}
+              gradientColors={cat.gradientColors}
+            />
+          ))}
+        </Animated.View>
+
+        {/* ── Submit button ── */}
+        <Animated.View entering={FadeInDown.delay(320).springify().damping(20)}>
+          <Pressable
+            style={[
+              styles.submitBtn,
+              success && styles.submitBtnSuccess,
+              loading && styles.submitBtnLoading,
+            ]}
+            onPress={submitReview}
+            disabled={loading || success}
+          >
+            {success ? (
+              <>
+                <Ionicons name="checkmark-circle" size={22} color={Colors.bg} />
+                <Text style={styles.submitText}>Submitted!</Text>
+              </>
+            ) : (
+              <>
+                <Ionicons name="send" size={18} color={Colors.bg} />
+                <Text style={styles.submitText}>
+                  {loading ? 'Submitting…' : 'Submit Review'}
+                </Text>
+              </>
+            )}
+          </Pressable>
+        </Animated.View>
+      </ScrollView>
+
+      {/* ── Location picker overlay ── */}
+      <Overlay
+        isVisible={pickerVisible}
+        onBackdropPress={() => setPickerVisible(false)}
+        overlayStyle={styles.overlay}
+      >
+        <View>
+          <RNEText h4 style={styles.overlayTitle}>Select Location</RNEText>
+          <ScrollView style={styles.overlayList} showsVerticalScrollIndicator={false}>
+            {locations.map((l) => (
+              <Pressable
+                key={l.id}
+                style={styles.listItem}
+                onPress={() => {
+                  setLocationId(l.id);
+                  setPickerVisible(false);
+                  Haptics.selectionAsync();
+                }}
+              >
+                <View style={styles.listItemContent}>
+                  <Text style={styles.listItemTitle}>{l.name}</Text>
+                  {!!l.description && (
+                    <Text style={styles.listItemSub} numberOfLines={1}>
+                      {l.description}
+                    </Text>
+                  )}
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={Colors.textDim} />
+              </Pressable>
+            ))}
+            {locations.length === 0 && (
+              <Text style={styles.emptyOverlay}>No locations loaded yet.</Text>
+            )}
+          </ScrollView>
+          <Button
+            title="Cancel"
+            type="clear"
+            onPress={() => setPickerVisible(false)}
+            titleStyle={{ color: Colors.textMuted }}
+            containerStyle={{ marginTop: Spacing.sm }}
+          />
         </View>
-        
-        <View style={styles.sliderContainer}>
-            <Text style={styles.sliderLabel}>Light Level: {light}</Text>
-            <Slider value={light} onValueChange={setLight} maximumValue={10} minimumValue={0} step={1} thumbTintColor="#2f95dc" minimumTrackTintColor="#2f95dc" />
-            <View style={styles.scaleLabels}><Text style={styles.tinyLabel}>Dim</Text><Text style={styles.tinyLabel}>Bright</Text></View>
-        </View>
-        
-        <View style={styles.sliderContainer}>
-            <Text style={styles.sliderLabel}>Crowd Level: {crowd}</Text>
-            <Slider value={crowd} onValueChange={setCrowd} maximumValue={10} minimumValue={0} step={1} thumbTintColor="#2f95dc" minimumTrackTintColor="#2f95dc" />
-            <View style={styles.scaleLabels}><Text style={styles.tinyLabel}>Empty</Text><Text style={styles.tinyLabel}>Packed</Text></View>
-        </View>
-      </View>
-
-      <Button 
-        title="Submit Review" 
-        onPress={submitReview} 
-        loading={loading} 
-        disabled={loading}
-        containerStyle={styles.submitContainer} 
-        buttonStyle={styles.submitBtn}
-      />
-
-      <Overlay isVisible={pickerVisible} onBackdropPress={() => setPickerVisible(false)} overlayStyle={styles.overlay}>
-         <View>
-             <Text h4 style={{marginBottom: 15, textAlign:'center'}}>Select Location</Text>
-             <ScrollView style={{maxHeight: 400}}>
-                 {locations.map(l => (
-                     <ListItem key={l.id} onPress={() => { setLocationId(l.id); setPickerVisible(false); }} bottomDivider containerStyle={{borderRadius: 5}}>
-                         <ListItem.Content>
-                             <ListItem.Title style={{fontWeight:'600'}}>{l.name}</ListItem.Title>
-                             <ListItem.Subtitle style={{fontSize:12, color:'gray'}}>{l.description && l.description.substring(0,30)}</ListItem.Subtitle>
-                         </ListItem.Content>
-                         <Icon name="chevron-forward" type="ionicon" size={20} color="#ccc" />
-                     </ListItem>
-                 ))}
-                 {locations.length === 0 && <Text style={{textAlign:'center', marginTop:20}}>No locations loaded.</Text>}
-             </ScrollView>
-             <Button title="Close" type="clear" onPress={() => setPickerVisible(false)} containerStyle={{marginTop: 10}} />
-         </View>
       </Overlay>
-    </ScrollView>
+    </LinearGradient>
+  );
+}
+
+/* ---------- Score Preview Card ---------- */
+function ScoreCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ComponentProps<typeof Ionicons>['name'];
+  label: string;
+  value: number;
+}) {
+  const color =
+    value <= 3 ? Colors.calm : value <= 6 ? Colors.moderate : Colors.intense;
+
+  return (
+    <View style={[styles.scoreCard, { borderColor: color }]}>
+      <Ionicons name={icon} size={14} color={color} style={{ marginBottom: 2 }} />
+      <Text style={[styles.scoreCardValue, { color }]}>{value}</Text>
+      <Text style={styles.scoreCardLabel}>{label}</Text>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, paddingBottom: 50, backgroundColor: '#fff' },
-  header: { marginBottom: 30, textAlign: 'center', color: '#2f95dc' },
-  selectionContainer: { marginBottom: 30 },
-  selectBtn: { borderColor: '#ccc', borderWidth: 1, borderRadius: 10, justifyContent: 'flex-start', paddingHorizontal: 15 },
-  nearestBtn: { backgroundColor: '#2f95dc', borderRadius: 10, marginTop: 5 },
-  orDivider: { alignItems: 'center', marginVertical: 10 },
-  sliderSection: { marginBottom: 30 },
-  sliderContainer: { marginBottom: 20 },
-  sliderLabel: { fontSize: 16, fontWeight: '600', marginBottom: 5 },
-  scaleLabels: { flexDirection: 'row', justifyContent: 'space-between' },
-  tinyLabel: { fontSize: 10, color: 'gray' },
-  submitContainer: { marginTop: 10 },
-  submitBtn: { borderRadius: 10, paddingVertical: 12, backgroundColor: '#4caf50' },
-  overlay: { width: '85%', borderRadius: 15, padding: 20 }
+  gradient: { flex: 1 },
+  scrollContent: {
+    padding: Spacing.lg,
+    paddingTop: 60,
+    paddingBottom: 120,
+  },
+
+  screenTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: Colors.text,
+    letterSpacing: -0.5,
+    marginBottom: 4,
+  },
+  screenSub: {
+    fontSize: 14,
+    color: Colors.textMuted,
+    marginBottom: Spacing.lg,
+  },
+
+  // Live score preview row
+  previewRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    marginBottom: Spacing.lg,
+  },
+  scoreCard: {
+    flex: 1,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.sm + 2,
+    ...Shadows.subtle,
+  },
+  overallCard: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.elevated,
+  },
+  scoreCardValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  overallValue: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: Colors.primaryLight,
+    letterSpacing: -0.3,
+  },
+  scoreCardLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: Colors.textDim,
+    marginTop: 1,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+
+  // Section
+  section: {
+    marginBottom: Spacing.lg,
+  },
+  sectionLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    marginBottom: Spacing.md,
+  },
+
+  // Location row
+  locationRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  locationBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 13,
+  },
+  locationBtnActive: {
+    borderColor: Colors.primary,
+    backgroundColor: Colors.elevated,
+  },
+  locationBtnText: {
+    flex: 1,
+    color: Colors.textMuted,
+    fontSize: 14,
+  },
+  locationBtnTextActive: {
+    color: Colors.text,
+    fontWeight: '600',
+  },
+  nearestBtn: {
+    width: 48,
+    height: 48,
+    borderRadius: Radius.md,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Submit button
+  submitBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.primary,
+    borderRadius: Radius.lg,
+    paddingVertical: 16,
+    ...Shadows.glow,
+  },
+  submitBtnSuccess: {
+    backgroundColor: Colors.calm,
+  },
+  submitBtnLoading: {
+    opacity: 0.7,
+  },
+  submitText: {
+    color: Colors.bg,
+    fontSize: 16,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+
+  // Overlay / picker
+  overlay: {
+    width: '88%',
+    maxHeight: '70%',
+    borderRadius: Radius.xl,
+    padding: Spacing.lg,
+    backgroundColor: Colors.surface,
+  },
+  overlayTitle: {
+    color: Colors.text,
+    marginBottom: Spacing.md,
+    textAlign: 'center',
+    fontSize: 18,
+  },
+  overlayList: { maxHeight: 360 },
+  listItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    paddingVertical: Spacing.sm + 2,
+    paddingHorizontal: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  listItemContent: {
+    flex: 1,
+  },
+  listItemTitle: {
+    color: Colors.text,
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  listItemSub: {
+    color: Colors.textMuted,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  emptyOverlay: {
+    textAlign: 'center',
+    color: Colors.textMuted,
+    marginTop: Spacing.lg,
+    fontSize: 14,
+  },
 });
