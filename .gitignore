@@ -41,3 +41,9 @@ app-example
 # generated native folders
 /ios
 /android
+
+# AI Agent folders
+.agent/
+.agents/
+_agent/
+_agents/

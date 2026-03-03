@@ -22,9 +22,8 @@ import { Radius, Spacing, useColors } from '../../constants/theme';
 
 /** Route name → icon + label */
 const TAB_CONFIG: Record<string, { icon: keyof typeof Ionicons.glyphMap; label: string }> = {
-  index: { icon: 'map', label: 'Map' },
+  explore: { icon: 'compass', label: 'Explore' },
   submit: { icon: 'add-circle', label: 'Rate' },
-  detect: { icon: 'pulse', label: 'Detect' },
   profile: { icon: 'person', label: 'Profile' },
 };
 

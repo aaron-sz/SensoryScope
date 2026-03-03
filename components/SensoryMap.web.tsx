@@ -5,9 +5,10 @@ import { DisplayLocation } from './LocationModal';
 
 type Props = {
   region: any;
-  locations: DisplayLocation[];
-  selectedId: number | null;
+  selectedId: string | null;
   onSelectLocation: (loc: DisplayLocation) => void;
+  mapType?: 'standard' | 'satellite';
+  onRegionChangeComplete?: (region: any) => void;
 };
 
 const SensoryMap = forwardRef(function SensoryMap(_props: Props, _ref: any) {

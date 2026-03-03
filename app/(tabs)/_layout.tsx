@@ -1,6 +1,6 @@
 /**
- * Tab layout — wires up the FloatingTabBar custom renderer
- * and hides the default header chrome on every tab.
+ * Tab layout — 3-tab structure: Explore, Rate, Profile.
+ * Map and Detect have been removed.
  */
 import { Tabs } from 'expo-router';
 import FloatingTabBar from '../../components/ui/FloatingTabBar';
@@ -11,12 +11,12 @@ export default function TabLayout() {
       tabBar={(props) => <FloatingTabBar {...props} />}
       screenOptions={{ headerShown: false }}
     >
-      <Tabs.Screen name="index" options={{ title: 'Map' }} />
+      <Tabs.Screen name="explore" options={{ title: 'Explore' }} />
       <Tabs.Screen name="submit" options={{ title: 'Rate' }} />
-      <Tabs.Screen name="detect" options={{ title: 'Detect' }} />
       <Tabs.Screen name="profile" options={{ title: 'Profile' }} />
-      {/* Hide extra files from appearing as tabs */}
-      <Tabs.Screen name="explore" options={{ href: null }} />
+      {/* Hide removed routes if they still exist in file system */}
+      <Tabs.Screen name="index" options={{ href: null }} />
+      <Tabs.Screen name="detect" options={{ href: null }} />
     </Tabs>
   );
 }

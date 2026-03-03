@@ -115,6 +115,13 @@ export default function SignupScreen() {
                         </TouchableOpacity>
                     </Link>
                 </View>
+
+                <TouchableOpacity
+                    style={styles.guestButton}
+                    onPress={() => router.replace('/(tabs)' as any)}
+                >
+                    <Text style={styles.guestButtonText}>Skip for now — explore as guest</Text>
+                </TouchableOpacity>
             </View>
         </KeyboardAvoidingView>
     );
@@ -188,5 +195,15 @@ const styles = StyleSheet.create({
         color: Colors.accent,
         fontSize: 14,
         fontWeight: '600',
+    },
+    guestButton: {
+        alignItems: 'center',
+        paddingVertical: Spacing.md,
+        marginTop: Spacing.sm,
+    },
+    guestButtonText: {
+        color: Colors.textMuted,
+        fontSize: 14,
+        textDecorationLine: 'underline',
     },
 });

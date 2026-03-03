@@ -1,20 +1,23 @@
 /**
  * PlaceSearchBar
- * A frosted search bar with a live-filtered dropdown.
- * Tap to open → type to filter → tap a result → map jumps to it.
+ * Frosted search bar using Google Places Autocomplete.
+ * Results are sorted by distance from the user's location.
+ * Scrollable dropdown with distance labels.
  */
 import { Ionicons } from '@expo/vector-icons';
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  FlatList,
+  Keyboard,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   View,
 } from 'react-native';
 import Animated, { FadeInDown, FadeOut } from 'react-native-reanimated';
-import { Colors, Radius, Shadows, Spacing } from '../constants/theme';
+import { Radius, Shadows, Spacing, useColors } from '../constants/theme';
 import { DisplayLocation } from './LocationModal';
 
 const BAR_HEIGHT = 46;
@@ -22,22 +25,89 @@ const BAR_HEIGHT = 46;
 type Props = {
   locations: DisplayLocation[];
   onSelect: (loc: DisplayLocation) => void;
+  userLocation?: { latitude: number; longitude: number } | null;
 };
 
-export default function PlaceSearchBar({ locations, onSelect }: Props) {
+type Prediction = {
+  place_id: string;
+  description: string;
+  distance_meters?: number;
+  structured_formatting: {
+    main_text: string;
+    secondary_text: string;
+  };
+};
+
+/** Quick haversine distance in meters between two lat/lng points */
+function haversineDistance(
+  lat1: number, lon1: number,
+  lat2: number, lon2: number
+): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) *
+    Math.sin(dLon / 2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function formatDistance(meters: number): string {
+  if (meters < 1000) return `${Math.round(meters)}m`;
+  const miles = meters / 1609.34;
+  return `${miles.toFixed(1)} mi`;
+}
+
+export default function PlaceSearchBar({ onSelect, userLocation }: Props) {
+  const C = useColors();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [results, setResults] = useState<Prediction[]>([]);
+  const [loading, setLoading] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return locations;
-    return locations.filter(
-      (l) =>
-        l.name.toLowerCase().includes(q) ||
-        (l.description ?? '').toLowerCase().includes(q)
-    );
-  }, [locations, query]);
+  useEffect(() => {
+    if (!query.trim()) {
+      setResults([]);
+      return;
+    }
+    const timer = setTimeout(() => fetchPredictions(query), 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
+  const fetchPredictions = async (text: string) => {
+    const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!API_KEY) return;
+
+    setLoading(true);
+    try {
+      let url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(text)}&key=${API_KEY}`;
+
+      if (userLocation) {
+        url += `&location=${userLocation.latitude},${userLocation.longitude}&radius=20000&origin=${userLocation.latitude},${userLocation.longitude}`;
+      }
+
+      const res = await fetch(url);
+      const json = await res.json();
+
+      if (json.predictions) {
+        // Google returns distance_meters when origin is set — sort by it
+        const sorted = [...json.predictions].sort((a: any, b: any) => {
+          const distA = a.distance_meters ?? Infinity;
+          const distB = b.distance_meters ?? Infinity;
+          return distA - distB;
+        });
+        setResults(sorted);
+      }
+    } catch (e) {
+      console.warn('Autocomplete error:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const openBar = () => {
     setOpen(true);
@@ -47,42 +117,106 @@ export default function PlaceSearchBar({ locations, onSelect }: Props) {
   const closeBar = () => {
     setOpen(false);
     setQuery('');
-    inputRef.current?.blur();
+    setResults([]);
+    Keyboard.dismiss();
   };
 
-  const handleSelect = (loc: DisplayLocation) => {
-    closeBar();
-    onSelect(loc);
+  const handleSelectPrediction = async (prediction: Prediction) => {
+    const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!API_KEY) return;
+
+    setLoading(true);
+    try {
+      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${prediction.place_id}&fields=geometry,name,vicinity&key=${API_KEY}`;
+      const res = await fetch(url);
+      const json = await res.json();
+
+      if (json.result?.geometry) {
+        const place = json.result;
+        const newLoc: DisplayLocation = {
+          id: prediction.place_id,
+          name: place.name,
+          description: place.vicinity || prediction.structured_formatting.secondary_text,
+          latitude: place.geometry.location.lat,
+          longitude: place.geometry.location.lng,
+          avg_sound: null,
+          avg_light: null,
+          avg_crowd: null,
+          review_count: 0,
+        };
+        closeBar();
+        onSelect(newLoc);
+      }
+    } catch (e) {
+      console.warn('Place Details error:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const renderItem = ({ item: pred }: { item: Prediction }) => {
+    const distLabel = pred.distance_meters
+      ? formatDistance(pred.distance_meters)
+      : userLocation
+        ? null
+        : null;
+
+    return (
+      <Pressable
+        style={[styles.item, { borderBottomColor: C.border }]}
+        onPress={() => handleSelectPrediction(pred)}
+      >
+        <Ionicons name="location" size={16} color={C.accent} style={styles.itemIcon} />
+        <View style={styles.itemBody}>
+          <Text style={[styles.itemName, { color: C.text }]} numberOfLines={1}>
+            {pred.structured_formatting.main_text}
+          </Text>
+          {!!pred.structured_formatting.secondary_text && (
+            <Text style={[styles.itemSub, { color: C.textMuted }]} numberOfLines={1}>
+              {pred.structured_formatting.secondary_text}
+            </Text>
+          )}
+        </View>
+        {distLabel && (
+          <Text style={[styles.distLabel, { color: C.accent }]}>{distLabel}</Text>
+        )}
+        <Ionicons name="chevron-forward" size={14} color={C.textDim} />
+      </Pressable>
+    );
   };
 
   return (
     <View style={styles.wrapper}>
       {/* ── Bar ── */}
       <Pressable
-        style={[styles.bar, open && styles.barActive]}
+        style={[
+          styles.bar,
+          { backgroundColor: C.elevated, borderColor: C.border },
+          open && { borderColor: C.accent }
+        ]}
         onPress={open ? undefined : openBar}
       >
-        <Ionicons
-          name="search"
-          size={16}
-          color={open ? Colors.accent : Colors.textMuted}
-        />
+        <Ionicons name="search" size={18} color={open ? C.accent : C.textMuted} />
         <TextInput
           ref={inputRef}
-          style={styles.input}
-          placeholder="Search places…"
-          placeholderTextColor={Colors.textDim}
+          style={[styles.input, { color: C.text }]}
+          placeholder="Search places..."
+          placeholderTextColor={C.textDim}
           value={query}
           onChangeText={setQuery}
           editable={open}
           pointerEvents={open ? 'auto' : 'none'}
+          returnKeyType="search"
         />
+        {loading && open ? (
+          <ActivityIndicator size="small" color={C.accent} style={{ marginRight: 6 }} />
+        ) : null}
         {open ? (
           <Pressable onPress={closeBar} hitSlop={10}>
-            <Ionicons name="close-circle" size={18} color={Colors.textMuted} />
+            <Ionicons name="close-circle" size={20} color={C.textMuted} />
           </Pressable>
         ) : (
-          <Ionicons name="chevron-down" size={16} color={Colors.textDim} />
+          <Ionicons name="chevron-down" size={18} color={C.textDim} />
         )}
       </Pressable>
 
@@ -91,43 +225,23 @@ export default function PlaceSearchBar({ locations, onSelect }: Props) {
         <Animated.View
           entering={FadeInDown.duration(160).springify().damping(22)}
           exiting={FadeOut.duration(120)}
-          style={styles.dropdown}
+          style={[styles.dropdown, { backgroundColor: C.surface, borderColor: C.border }]}
         >
-          <ScrollView
-            style={styles.list}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
-            {filtered.length === 0 ? (
-              <Text style={styles.empty}>No places found</Text>
-            ) : (
-              filtered.map((loc) => (
-                <Pressable
-                  key={loc.id}
-                  style={styles.item}
-                  onPress={() => handleSelect(loc)}
-                >
-                  <Ionicons
-                    name="location"
-                    size={14}
-                    color={Colors.accent}
-                    style={styles.itemIcon}
-                  />
-                  <View style={styles.itemBody}>
-                    <Text style={styles.itemName} numberOfLines={1}>
-                      {loc.name}
-                    </Text>
-                    {!!loc.description && (
-                      <Text style={styles.itemSub} numberOfLines={1}>
-                        {loc.description}
-                      </Text>
-                    )}
-                  </View>
-                  <Ionicons name="chevron-forward" size={14} color={Colors.textDim} />
-                </Pressable>
-              ))
-            )}
-          </ScrollView>
+          {results.length === 0 && !loading && query.length > 0 ? (
+            <Text style={[styles.empty, { color: C.textMuted }]}>No places found</Text>
+          ) : results.length === 0 && !loading ? (
+            <Text style={[styles.empty, { color: C.textMuted }]}>Type to search...</Text>
+          ) : (
+            <FlatList
+              data={results}
+              renderItem={renderItem}
+              keyExtractor={(item) => item.place_id}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={true}
+              style={styles.list}
+              nestedScrollEnabled={true}
+            />
+          )}
         </Animated.View>
       )}
     </View>
@@ -136,7 +250,6 @@ export default function PlaceSearchBar({ locations, onSelect }: Props) {
 
 const styles = StyleSheet.create({
   wrapper: {
-    // zIndex keeps the dropdown above the FAB and other overlays
     zIndex: 20,
     elevation: 20,
   },
@@ -145,20 +258,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
     height: BAR_HEIGHT,
-    backgroundColor: 'rgba(255, 255, 255, 0.97)',
     borderRadius: Radius.md,
     paddingHorizontal: Spacing.md,
     borderWidth: 1,
-    borderColor: Colors.border,
     ...Shadows.card,
-  },
-  barActive: {
-    borderColor: Colors.accent,
   },
   input: {
     flex: 1,
-    color: Colors.text,
-    fontSize: 14,
+    fontSize: 15,
     padding: 0,
   },
   dropdown: {
@@ -166,21 +273,21 @@ const styles = StyleSheet.create({
     top: BAR_HEIGHT + 6,
     left: 0,
     right: 0,
-    backgroundColor: Colors.elevated,
+    maxHeight: 350,
     borderRadius: Radius.md,
     borderWidth: 1,
-    borderColor: Colors.border,
     overflow: 'hidden',
-    elevation: 20,
     zIndex: 30,
+    elevation: 30,
     ...Shadows.card,
   },
-  list: { maxHeight: 280 },
+  list: {
+    maxHeight: 340,
+  },
   empty: {
     textAlign: 'center',
-    color: Colors.textMuted,
     padding: Spacing.lg,
-    fontSize: 13,
+    fontSize: 14,
   },
   item: {
     flexDirection: 'row',
@@ -188,19 +295,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm + 4,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: Colors.border,
-    gap: Spacing.sm,
+    gap: Spacing.sm + 2,
   },
   itemIcon: { marginTop: 1 },
   itemBody: { flex: 1 },
   itemName: {
-    color: Colors.text,
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '600',
   },
   itemSub: {
-    color: Colors.textMuted,
-    fontSize: 11,
-    marginTop: 1,
+    fontSize: 12,
+    marginTop: 2,
+  },
+  distLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginRight: 4,
   },
 });

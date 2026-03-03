@@ -84,6 +84,13 @@ export default function LoginScreen() {
                     )}
                 </TouchableOpacity>
 
+                <TouchableOpacity
+                    style={styles.guestButton}
+                    onPress={() => router.replace('/(tabs)' as any)}
+                >
+                    <Text style={styles.guestButtonText}>Continue as Guest</Text>
+                </TouchableOpacity>
+
                 <View style={styles.footer}>
                     <Text style={styles.footerText}>Don't have an account? </Text>
                     <Link href="/signup" asChild>
@@ -151,6 +158,19 @@ const styles = StyleSheet.create({
         color: Colors.bg,
         fontSize: 16,
         fontWeight: '600',
+    },
+    guestButton: {
+        borderRadius: Radius.md,
+        padding: Spacing.md,
+        alignItems: 'center',
+        marginTop: Spacing.sm,
+        borderWidth: 1,
+        borderColor: Colors.border,
+    },
+    guestButtonText: {
+        color: Colors.textMuted,
+        fontSize: 15,
+        fontWeight: '500',
     },
     footer: {
         flexDirection: 'row',

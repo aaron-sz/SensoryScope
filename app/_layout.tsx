@@ -7,7 +7,12 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { DarkColors, LightColors } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 
-const AuthContext = createContext<{ session: Session | null }>({ session: null });
+type AuthContextType = {
+  session: Session | null;
+  isGuest: boolean;
+};
+
+const AuthContext = createContext<AuthContextType>({ session: null, isGuest: true });
 
 export const useAuth = () => useContext(AuthContext);
 
@@ -41,16 +46,11 @@ export default function RootLayout() {
   useEffect(() => {
     if (loading || !navigationReady) return;
 
-    const inTabsGroup = segments[0] === '(tabs)';
     const onAuthScreen = segments[0] === 'login' || segments[0] === 'signup';
 
-    if (!session && inTabsGroup) {
-      // Not signed in but trying to access protected tabs → go to login
-      router.replace('/login' as any);
-      hasRedirected.current = true;
-    } else if (session && (onAuthScreen || (segments as string[]).length === 0)) {
-
-      // Signed in but on login/signup/root → go to main app
+    // GUEST-FRIENDLY: Only redirect away from auth screens if the user has a session.
+    // We no longer force unauthenticated users away from the tabs — they are guests.
+    if (session && onAuthScreen) {
       router.replace('/(tabs)' as any);
       hasRedirected.current = true;
     }
@@ -68,7 +68,7 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
-        <AuthContext.Provider value={{ session }}>
+        <AuthContext.Provider value={{ session, isGuest: !session }}>
           <View style={{ flex: 1 }} onLayout={() => setNavigationReady(true)}>
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

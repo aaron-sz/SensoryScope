@@ -28,12 +28,12 @@ import Animated, {
 import { Colors, Radius, scoreColor, Shadows, Spacing } from '../constants/theme';
 
 export type DisplayLocation = {
-  id: number;
+  id: string;
   name: string;
-  description: string;
-  avg_sound: number;
-  avg_light: number;
-  avg_crowd: number;
+  description?: string;
+  avg_sound: number | null;
+  avg_light: number | null;
+  avg_crowd: number | null;
   review_count: number;
   latitude: number;
   longitude: number;
@@ -45,7 +45,10 @@ type Props = {
 };
 
 export default function LocationModal({ location, onClose }: Props) {
-  const overallScore = (location.avg_sound + location.avg_light + location.avg_crowd) / 3;
+  let overallScore: number | null = null;
+  if (location.avg_sound !== null && location.avg_light !== null && location.avg_crowd !== null) {
+    overallScore = (location.avg_sound + location.avg_light + location.avg_crowd) / 3;
+  }
   const sheetY = useSharedValue(0);
 
   // Reset sheet position on each open
@@ -145,7 +148,16 @@ export default function LocationModal({ location, onClose }: Props) {
 }
 
 /* ---------- ScoreRing ---------- */
-function ScoreRing({ score }: { score: number }) {
+function ScoreRing({ score }: { score: number | null }) {
+  if (score === null) {
+    return (
+      <View style={[styles.scoreRing, { borderColor: Colors.border, backgroundColor: Colors.surface, ...Shadows.subtle }]}>
+        <Text style={[styles.scoreNumber, { color: Colors.textDim, fontSize: 16 }]}>N/A</Text>
+        <Text style={[styles.scoreLabel, { color: Colors.textMuted }]}>No reviews</Text>
+      </View>
+    );
+  }
+
   const color = scoreColor(score);
   const label = score <= 3 ? 'Calm' : score <= 6 ? 'Moderate' : 'Intense';
 
@@ -158,12 +170,15 @@ function ScoreRing({ score }: { score: number }) {
 }
 
 /* ---------- MetricBar ---------- */
-function MetricBar({ label, value, delay }: { label: string; value: number; delay: number }) {
-  const color = scoreColor(value);
+function MetricBar({ label, value, delay }: { label: string; value: number | null; delay: number }) {
+  const safeValue = value ?? 0;
+  const color = value === null ? Colors.border : scoreColor(safeValue);
   const fill = useSharedValue(0);
 
   useEffect(() => {
-    fill.value = withDelay(delay, withTiming((value / 10) * 100, { duration: 600 }));
+    if (value !== null) {
+      fill.value = withDelay(delay, withTiming((safeValue / 10) * 100, { duration: 600 }));
+    }
     return () => { fill.value = 0; };
   }, [value, delay]);
 
@@ -175,7 +190,9 @@ function MetricBar({ label, value, delay }: { label: string; value: number; dela
       <View style={styles.trackBg}>
         <Animated.View style={[styles.trackFill, barStyle, { backgroundColor: color }]} />
       </View>
-      <Text style={[styles.metricValue, { color }]}>{value.toFixed(1)}</Text>
+      <Text style={[styles.metricValue, { color: value === null ? Colors.textDim : color }]}>
+        {value === null ? '-' : safeValue.toFixed(1)}
+      </Text>
     </View>
   );
 }
