@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Skill(ralph-loop:ralph-loop)",
+      "mcp__ide__getDiagnostics"
+    ]
+  }
+}
