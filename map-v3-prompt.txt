@@ -1,0 +1,561 @@
+You are doing a comprehensive, deep rebuild of app/(tabs)/map.tsx for SensoryScope.
+This is a React Native Expo app (Android-first) for neurodivergent users who need to
+know if a place is sensory-safe before they go. The map is the soul of this app.
+
+READ THESE FILES FIRST (do not skip any):
+  - app/(tabs)/map.tsx         — current implementation you are rebuilding
+  - constants/theme.ts         — useColors(), LightColors, DarkColors, Spacing, Radius, Shadows
+  - components/PlaceCard.tsx   — PlaceData type definition
+  - components/PlaceDetailSheet.tsx — how it receives place props
+
+DO NOT TOUCH: _layout.tsx, FloatingTabBar.tsx — they are correct.
+
+═══════════════════════════════════════════════════════
+KNOWN BUGS — FIX THESE FIRST BEFORE ANYTHING ELSE
+═══════════════════════════════════════════════════════
+
+BUG 1: ICONS ARE INVISIBLE / TOO SMALL
+The sensory breakdown icons (volume-medium, sunny, people) and the map pin
+leaf icon are rendered at size 12-16 and are nearly invisible on Android,
+especially against colored backgrounds. Fix:
+  - SensoryBar icons: size 20, not 16
+  - MapPin leaf icon: size 14, not 12
+  - All Ionicons in the bottom card: minimum size 18
+  - The VerdictRow help-circle-outline: size 32, not 28
+  - Breakdown section title icon "information-circle-outline": size 16
+  - Category chip icons (if any): minimum size 18
+  - FAB locate icon: size 26, not 22
+  - Search bar search icon: size 20, not 18
+  - Search result location icon: size 18, not 16
+  - Close button in card: size 18, not 16
+  - ActionButton icons: size 18, not 16
+  - openPill time-outline: size 13, not 11
+  - Star icon in meta row: size 14, not 12
+  - catRow location-outline: size 14, not 12
+  - FilterPill icons: size 14, not 12 or 13
+  RULE: NO Ionicon smaller than size 14 anywhere in this file. Most should be 18+.
+
+BUG 2: MAP PIN GLOW RING BROKEN (position: absolute with inset)
+  React Native does not support CSS `inset` shorthand. The glowRing style uses:
+    top: -6, left: -6, right: -6, bottom: -6
+  But the pill and pointer are stacked vertically using alignItems: 'center', so
+  the glow ring (position: absolute) doesn't wrap around both the pill and pointer.
+  Fix: Remove the glowRing as a sibling. Instead, wrap the entire pin (pill + pointer)
+  in a container View. For selected pins, add a background glow circle BEHIND the pill:
+    <View style={{ alignItems: 'center' }}>
+      {isSelected && <View style={glowBehind} />}   // absolute, centered, width pillWidth+20
+      <View style={pill}>...</View>
+      <View style={pointer} />
+    </View>
+  The glowBehind should be: position absolute, width 72, height 36, borderRadius 18,
+  backgroundColor: glowColor, top: 0 (aligns with pill), zIndex: -1
+
+BUG 3: SENSORY BAR ANIMATION WIDTH % DOESN'T WORK IN REACT NATIVE
+  RNAnimated.Value interpolating to '0%' → '100%' as outputRange is unreliable for
+  bar-fill widths because the bar track needs a measured pixel width to work.
+  Fix: Use a layout-measured approach:
+    - The bar track gets onLayout to capture its pixel width
+    - Store it in a useRef<number>(0)
+    - The Animated.Value goes 0 → measuredWidth (pixels, not %)
+    - Use { width: animValue } as the fill style (pixel width, not %)
+    - This guarantees the animation works correctly on Android
+
+BUG 4: CARD BOTTOM PADDING — CONTENT GETS CUT OFF
+  The card has paddingBottom: 16 but sits at bottom: insets.bottom + 94. On devices
+  with a navigation bar, content at the bottom of the card can be clipped.
+  Fix: paddingBottom: Math.max(16, insets.bottom > 0 ? 8 : 16)
+  But since the card is a component that doesn't know insets, pass bottomPadding as a prop.
+  SelectedPlaceCardProps gets: bottomPadding: number
+  In MapScreen: <SelectedPlaceCard ... bottomPadding={Math.max(16, insets.bottom)} />
+
+BUG 5: EMPTY STATE RENDERS ON TOP OF SEARCH RESULTS
+  The empty state (no places found) renders even while the search bar is open.
+  Fix: Only show empty state when !searchOpen && !loading && places.length === 0 && userLat != null
+
+═══════════════════════════════════════════════════════
+NEW FEATURE 1: GOOGLE PLACES "BUSY NOW" / POPULAR TIMES
+═══════════════════════════════════════════════════════
+
+Google's Place Details API returns a `current_opening_hours` field that includes
+`popular_times` data on some places, and more importantly the `opening_hours` field
+has `open_now`. For busyness, use the Google Places Details API with these fields:
+
+Endpoint (for each selected/tapped place — fetch on demand, NOT for all pins at once):
+  https://maps.googleapis.com/maps/api/place/details/json
+    ?place_id={place_id}
+    &fields=place_id,name,opening_hours,current_opening_hours,business_status,formatted_phone_number
+    &key={EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}
+
+The `current_opening_hours.periods` can tell us open/closed with specificity.
+The `business_status` field tells us: OPERATIONAL, CLOSED_TEMPORARILY, CLOSED_PERMANENTLY.
+
+Additionally, use the Places API `opening_hours.weekday_text` to show hours.
+
+Create a type:
+  interface PlaceDetails {
+    business_status?: string;
+    formatted_phone_number?: string;
+    opening_hours?: {
+      open_now?: boolean;
+      weekday_text?: string[];
+    };
+  }
+
+Fetch this in the SelectedPlaceCard via a useEffect when the place changes:
+  - Set a `details` state (PlaceDetails | null), default null
+  - Fetch on mount / when place.place_id changes
+  - Show a loading skeleton while fetching (ActivityIndicator in the info area)
+  - Use details.opening_hours.open_now over place.opening_hours.open_now (more accurate)
+  - Show details.business_status: if CLOSED_TEMPORARILY or CLOSED_PERMANENTLY,
+    show a red "Permanently Closed" or "Temporarily Closed" pill instead of open/closed
+  - If weekday_text available, show today's hours in the meta row
+    (get today's day index: new Date().getDay(), maps to weekday_text[0..6])
+
+This makes the "is it open" information accurate and live.
+
+═══════════════════════════════════════════════════════
+NEW FEATURE 2: LIVE CROWD CONTEXT FROM PLACES API
+═══════════════════════════════════════════════════════
+
+When the user selects a place, also fetch from:
+  https://maps.googleapis.com/maps/api/place/details/json
+    ?place_id={place_id}
+    &fields=rating,user_ratings_total,price_level,types
+    &key={EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}
+
+Use `user_ratings_total` and `price_level` to add context in the card:
+  - user_ratings_total: show as "X Google reviews" next to the star rating
+  - price_level (0-4): show as "$" to "$$$$" in the meta row, using C.textMuted color
+  - types: use to show the category label more accurately (you already do this)
+
+═══════════════════════════════════════════════════════
+NEW FEATURE 3: TRAFFIC-AWARE MAP STYLING (ROAD COLORS)
+═══════════════════════════════════════════════════════
+
+react-native-maps with PROVIDER_GOOGLE supports showing live traffic via:
+  <MapView trafficEnabled={true} ... />
+
+Enable this with a toggle in the filter row. When enabled:
+  - Google Maps renders roads with traffic colors:
+      Green = free-flowing traffic (calm to travel)
+      Yellow = moderate traffic
+      Red = heavy traffic (potentially stressful for sensory-sensitive users)
+  - This directly maps to SensoryScope's mission: heavy traffic = more noise, stress, chaos
+
+Add a "Traffic" toggle pill in the filter row:
+  const [trafficEnabled, setTrafficEnabled] = useState(false);
+  Pill: Ionicons "car-outline" size 14 color (trafficEnabled ? C.calm : C.textMuted)
+  Text: "Traffic"
+  When active: backgroundColor C.calmGlow, borderColor C.calm, icon/text color C.calm
+  When inactive: same as other filter pills
+
+On the MapView: trafficEnabled={trafficEnabled}
+
+Also, when traffic is enabled, add a small note in the map legend:
+  "Traffic: green=clear" shown below the sensory legend pill
+
+═══════════════════════════════════════════════════════
+NEW FEATURE 4: SENSORY-AWARE PLACE SCORE OVERLAY ON PIN
+═══════════════════════════════════════════════════════
+
+The current pin shows just a number. Improve it:
+
+PILL PIN REDESIGN (still pure Views, NO reanimated inside Marker):
+  - Size: height 34 (was 32), minWidth 56 (was 52)
+  - For SCORED places: show icon (Ionicons) + score number
+      Score ≤ 3: icon "leaf" (filled), size 15, color white — peaceful/natural
+      Score ≤ 6: icon "alert-circle-outline", size 15, color white — caution
+      Score > 6: icon "warning-outline", size 15, color white — warning
+  - For UNSCORED places: icon "help-circle-outline" size 16 color white + no number
+  - Selected state: scale the pill to 1.15x using a wrapper View with transform
+    (NOT reanimated — use a static scale: [{ scale: isSelected ? 1.15 : 1 }])
+  - Selected state border: 3px white border, elevation 10
+  - The pill should have a subtle inner shadow effect: use a second View inside
+    with position absolute, inset 0 (use top/bottom/left/right: 0), borderRadius 16,
+    borderWidth 1, borderColor 'rgba(255,255,255,0.25)' for a glass highlight effect
+
+Score text: size 14 (not 13), fontWeight '900'
+
+The icon choice communicates instantly: leaf=safe, alert=moderate, warning=danger
+
+═══════════════════════════════════════════════════════
+NEW FEATURE 5: SENSORY HEATMAP CONTEXT (PIN CLUSTERING HINT)
+═══════════════════════════════════════════════════════
+
+When 3+ pins are in a small area and ALL have calm scores (≤ 3), show a subtle
+"Calm Zone" badge floating near the cluster:
+  - This is NOT a real cluster — it's a single Marker placed at the centroid
+    of the calm places, with a special badge view
+  - Only show when: 3+ places with sensory score ≤ 3 within 0.5mi of each other
+  - Badge: pill shape, backgroundColor C.calmGlow + 'CC', borderWidth 1, borderColor C.calm
+    Ionicons "leaf" size 12 + Text "Calm Zone" fontSize 10 fontWeight 700 color C.calm
+  - tracksViewChanges={false} always (static badge)
+  - Do NOT show badge when a place is selected (too much visual noise)
+  - Compute calm clusters in useMemo from places array
+  - A "cluster centroid" = average lat/lng of calm places in that cluster
+  - Use a simple proximity check: for each unvisited calm place, group places within
+    ~0.5mi (0.008 degrees lat/lng approximately)
+
+interface CalmCluster { lat: number; lng: number; count: number }
+
+Helper:
+  function computeCalmClusters(places: PlaceWithSensory[]): CalmCluster[] {
+    const calmPlaces = places.filter(p => {
+      if (!p.sensory) return false;
+      const avg = (p.sensory.avg_sound + p.sensory.avg_light + p.sensory.avg_crowd) / 3;
+      return avg <= 3;
+    });
+    // Simple greedy clustering: 0.008 degree proximity
+    const visited = new Set<string>();
+    const clusters: CalmCluster[] = [];
+    for (const p of calmPlaces) {
+      if (visited.has(p.place_id)) continue;
+      const nearby = calmPlaces.filter(q => {
+        if (visited.has(q.place_id)) return false;
+        return Math.abs(q.geometry.location.lat - p.geometry.location.lat) < 0.008
+          && Math.abs(q.geometry.location.lng - p.geometry.location.lng) < 0.008;
+      });
+      if (nearby.length >= 3) {
+        nearby.forEach(q => visited.add(q.place_id));
+        const lat = nearby.reduce((s, q) => s + q.geometry.location.lat, 0) / nearby.length;
+        const lng = nearby.reduce((s, q) => s + q.geometry.location.lng, 0) / nearby.length;
+        clusters.push({ lat, lng, count: nearby.length });
+      }
+    }
+    return clusters;
+  }
+
+Render CalmZoneBadge as a separate Marker component (pure View, no reanimated):
+  <Marker key={`calm-cluster-${i}`} coordinate={{ latitude: c.lat, longitude: c.lng }}
+    tracksViewChanges={false} anchor={{ x: 0.5, y: 0.5 }} zIndex={-1}>
+    <CalmZoneBadge count={c.count} />
+  </Marker>
+
+CalmZoneBadge View:
+  - Row: Ionicons "leaf" size 12 C.calm + Text "{count} Calm Places" fontSize 10 fontWeight 700 C.calm
+  - Outer: backgroundColor = C.elevated + 'CC', borderRadius Radius.pill,
+           paddingHorizontal 10, paddingVertical 5, borderWidth 1, borderColor C.calm + '66'
+  - collapsable={false}
+
+═══════════════════════════════════════════════════════
+NEW FEATURE 6: QUICK SENSORY FILTER BUTTONS
+═══════════════════════════════════════════════════════
+
+Add a "Filter by sensory level" row BELOW the category chips (above the radius row).
+Three toggle buttons — only one can be active at a time (or none = show all):
+
+  const [sensoryFilter, setSensoryFilter] = useState<'calm' | 'moderate' | 'intense' | null>(null);
+
+  Buttons (horizontal row, gap 8):
+    - "Calm" (score ≤ 3): backgroundColor C.calmGlow when active, borderColor C.calm,
+       Ionicons "leaf" size 14 C.calm + Text "Calm" C.calm fontWeight 700 fontSize 12
+    - "Moderate" (score ≤ 6): backgroundColor C.moderateGlow when active, borderColor C.moderate,
+       Ionicons "alert-circle-outline" size 14 C.moderate + Text "Moderate" fontSize 12
+    - "Any": backgroundColor C.primaryGlow when active, borderColor C.border
+       Ionicons "apps-outline" size 14 + Text "All" fontSize 12
+
+  When a filter is active, filter the places shown on the map:
+    const visiblePlaces = useMemo(() => {
+      if (!sensoryFilter || sensoryFilter === 'any') return places;
+      return places.filter(p => {
+        if (!p.sensory) return sensoryFilter === null; // unrated places only shown when no filter
+        const avg = (p.sensory.avg_sound + p.sensory.avg_light + p.sensory.avg_crowd) / 3;
+        if (sensoryFilter === 'calm') return avg <= 3;
+        if (sensoryFilter === 'moderate') return avg > 3 && avg <= 6;
+        if (sensoryFilter === 'intense') return avg > 6;
+        return true;
+      });
+    }, [places, sensoryFilter]);
+
+  Use visiblePlaces instead of places when rendering Markers.
+
+  Filter pills styling:
+    paddingHorizontal 10, paddingVertical 6, borderRadius Radius.pill, borderWidth 1
+    flexDirection row, alignItems center, gap 5
+    inactive: backgroundColor C.elevated, borderColor C.border, text/icon C.textMuted
+
+═══════════════════════════════════════════════════════
+NEW FEATURE 7: SENSORY SCORE PILL ON SEARCH RESULTS
+═══════════════════════════════════════════════════════
+
+When search results appear, also fetch sensory scores for those results from Supabase
+(same batch-fetch pattern as fetchSensoryScores). Show a tiny colored pill on each
+search result row:
+  - If rated: View pill with getSensoryColor(score) bg, Text score rounded, white, fontSize 11
+  - If unrated: Text "?" fontSize 11, backgroundColor C.border, borderRadius 10, paddingHorizontal 6
+
+Merge the sensory data into searchResults state after the Supabase batch-fetch.
+
+═══════════════════════════════════════════════════════
+NEW FEATURE 8: "HOW BUSY IS IT RIGHT NOW?" SECTION IN CARD
+═══════════════════════════════════════════════════════
+
+After fetching place details (Feature 1), use the time-of-day to estimate crowd context.
+This is NOT real crowd data (Google doesn't expose it freely) — instead it's a
+sensory-contextual hint based on:
+  - Current hour of day (new Date().getHours())
+  - Day of week (new Date().getDay())
+  - Place type (restaurants are busiest 12-2pm and 6-9pm; parks are busiest weekends)
+
+Create a function:
+  function estimateBusynessHint(types: string[] | undefined, hour: number, day: number): {
+    level: 'likely-quiet' | 'possibly-busy' | 'likely-busy';
+    hint: string;
+  }
+
+Examples:
+  - restaurant, 7pm Friday: { level: 'likely-busy', hint: 'Likely busy during dinner rush' }
+  - library, 2pm Tuesday: { level: 'likely-quiet', hint: 'Typically quiet on weekday afternoons' }
+  - park, 10am Saturday: { level: 'possibly-busy', hint: 'Weekend mornings can be busy' }
+  - cafe, 8am weekday: { level: 'likely-busy', hint: 'Morning rush — may be noisy' }
+  - museum, 11am Sunday: { level: 'possibly-busy', hint: 'Weekend midday — moderate crowds' }
+  - shopping_mall, 3pm Saturday: { level: 'likely-busy', hint: 'Peak shopping hours' }
+  - Default quiet: { level: 'likely-quiet', hint: 'Typically calm at this time' }
+
+Show this below the open/closed status in the place info row:
+  Row: Ionicons icon based on level:
+    'likely-quiet':  "moon-outline" size 14 color C.calm
+    'possibly-busy': "time-outline" size 14 color C.moderate
+    'likely-busy':   "people" size 14 color C.intense
+  + Text hint, fontSize 11, color matching the level (calm/moderate/intense)
+  + Small pill background matching the level glow color
+
+This is honest UX — it tells users "here's our best guess" without false promises.
+
+═══════════════════════════════════════════════════════
+CARD SCROLL REQUIREMENT
+═══════════════════════════════════════════════════════
+
+The card now has a lot of content (verdict + info + busyness hint + breakdown + actions).
+Wrap the content between the drag handle and action buttons in a ScrollView:
+  - maxHeight: 320 (so it doesn't overflow the screen)
+  - The action buttons MUST stay OUTSIDE the ScrollView (always visible at bottom)
+  - The colored accentStripe and drag handle stay OUTSIDE too (at very top)
+  - ScrollView: showsVerticalScrollIndicator={false}, bounces={false}
+
+Structure:
+  <Animated.View card>
+    <accentStripe />
+    <dragHandle />
+    <ScrollView maxHeight={320}>
+      <VerdictRow />
+      <infoRow />
+      <busynessHint />
+      <breakdownSection />
+    </ScrollView>
+    <actionRow />
+  </Animated.View>
+
+═══════════════════════════════════════════════════════
+VISUAL POLISH REQUIREMENTS
+═══════════════════════════════════════════════════════
+
+1. CARD SHADOW: The card needs a stronger shadow to feel truly elevated:
+   elevation: 24
+   shadowColor: '#000000'
+   shadowOffset: { width: 0, height: -6 }
+   shadowOpacity: 0.18
+   shadowRadius: 28
+
+2. VERDICT ROW: The colored tinted background should be a slightly stronger tint:
+   Use getSensoryColor(score, C) + '18' (not '11') for better visibility
+
+3. BREAKDOWN SECTION BACKGROUND:
+   Light mode: backgroundColor '#F8FAF9' (slightly green-tinted neutral)
+   Dark mode: backgroundColor C.surface
+   Use isDark to pick: isDark ? C.surface : '#F8FAF9'
+   Pass isDark as a prop to the breakdown section or use useColorScheme() in the component
+
+4. PIN SHADOW ON ANDROID: Add elevation to the pill:
+   elevation: isSelected ? 10 : 5
+   This makes pins pop off the map surface
+
+5. SEARCH BAR ACTIVE STATE: When searchOpen is true:
+   borderColor: C.calm
+   Add a very subtle glow: elevation: 6 (Android)
+
+6. FILTER PILLS: Round them more:
+   borderRadius: Radius.pill (fully rounded, not Radius.sm)
+
+7. EMPTY STATE: Center it more precisely — it was using pointerEvents="box-none"
+   which meant taps passed through. Fix: the outer View has pointerEvents="box-none"
+   but the inner card View has pointerEvents="auto". This is already in the code
+   but double-check it's correct.
+
+8. CATEGORY CHIPS: Add paddingVertical: 0 and use justifyContent: 'center' +
+   height: 36 — the text should be vertically centered in the chip.
+
+9. FAB BORDER: The FAB should use:
+   borderColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.08)'
+   This makes it look correct in dark mode too
+
+═══════════════════════════════════════════════════════
+ACCESSIBILITY IMPROVEMENTS
+═══════════════════════════════════════════════════════
+
+1. All sensory score values should have accessibilityHint explaining the scale:
+   accessibilityHint="Lower scores mean calmer, more sensory-friendly environments"
+
+2. The traffic toggle should say:
+   accessibilityLabel={`Traffic overlay: ${trafficEnabled ? 'on' : 'off'}`}
+
+3. The sensory filter buttons:
+   accessibilityLabel={`Show ${filter} places`}
+   accessibilityState={{ selected: sensoryFilter === filter }}
+
+4. The VerdictRow:
+   accessibilityLiveRegion="polite" — so screen readers announce when a new place is selected
+
+5. The calm zone badge:
+   accessibilityLabel={`Calm zone: ${count} sensory-friendly places nearby`}
+
+═══════════════════════════════════════════════════════
+DATA & STATE ARCHITECTURE
+═══════════════════════════════════════════════════════
+
+New state to add (in MapScreen):
+  const [trafficEnabled, setTrafficEnabled] = useState(false);
+  const [sensoryFilter, setSensoryFilter] = useState<'calm' | 'moderate' | 'intense' | null>(null);
+
+New state in SelectedPlaceCard:
+  const [placeDetails, setPlaceDetails] = useState<PlaceDetails | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+
+Computed values:
+  const visiblePlaces = useMemo(() => { ... filter by sensoryFilter ... }, [places, sensoryFilter]);
+  const calmClusters = useMemo(() => computeCalmClusters(places), [places]);
+
+The fetchPlaceDetails function inside SelectedPlaceCard:
+  async function fetchPlaceDetails(placeId: string) {
+    const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!API_KEY) return;
+    setDetailsLoading(true);
+    try {
+      const url = `https://maps.googleapis.com/maps/api/place/details/json?place_id=${placeId}&fields=business_status,formatted_phone_number,opening_hours,current_opening_hours,rating,user_ratings_total,price_level&key=${API_KEY}`;
+      const json = await fetch(url).then(r => r.json());
+      if (json.result) setPlaceDetails(json.result as PlaceDetails);
+    } catch { /* silent */ }
+    finally { setDetailsLoading(false); }
+  }
+
+  useEffect(() => {
+    setPlaceDetails(null);
+    fetchPlaceDetails(place.place_id);
+  }, [place.place_id]);
+
+═══════════════════════════════════════════════════════
+TYPESCRIPT REQUIREMENTS
+═══════════════════════════════════════════════════════
+
+All new interfaces:
+  interface PlaceDetails {
+    business_status?: string;
+    formatted_phone_number?: string;
+    opening_hours?: { open_now?: boolean; weekday_text?: string[] };
+    rating?: number;
+    user_ratings_total?: number;
+    price_level?: number;
+  }
+
+  interface CalmCluster { lat: number; lng: number; count: number }
+
+  interface CalmZoneBadgeProps { count: number }
+
+  type SensoryFilter = 'calm' | 'moderate' | 'intense' | null;
+
+  type BusynessLevel = 'likely-quiet' | 'possibly-busy' | 'likely-busy';
+
+  interface BusynessHint { level: BusynessLevel; hint: string }
+
+Updated SelectedPlaceCardProps:
+  interface SelectedPlaceCardProps {
+    place: PlaceWithSensory;
+    onClose: () => void;
+    onDetails: () => void;
+    bottomPadding: number;
+    isDark: boolean;
+  }
+
+MapPinProps stays as defined, but add isDark is not needed since colors are pre-computed.
+
+After writing, ALWAYS run mcp__ide__getDiagnostics and fix EVERY error. Zero tolerance.
+
+═══════════════════════════════════════════════════════
+PRESERVE FROM CURRENT CODE (do not remove or break)
+═══════════════════════════════════════════════════════
+
+  - All data fetching: fetchPlaces, fetchSensoryScores, doSearch, flyToPlace
+  - initLocation(), mapRef, animateToRegion calls
+  - DARK_MAP_STYLE and LIGHT_MAP_STYLE constants
+  - RADIUS_OPTIONS, CATEGORIES (keep current order: Parks, Libraries, Cafes first)
+  - PlaceDetailSheet integration
+  - SlideInDown/SlideOutDown on card container
+  - Pan gesture dismiss
+  - All search state and logic
+  - 4-layer stack: MapView → TopOverlay → FAB → BottomCard
+
+═══════════════════════════════════════════════════════
+COMPLETE QUALITY BAR — ALL MUST BE TRUE BEFORE STOPPING
+═══════════════════════════════════════════════════════
+
+BUGS:
+  □ All Ionicons minimum size 14; sensory icons size 20; FAB icon size 26
+  □ MapPin glow implemented without CSS 'inset' — uses absolute positioned View with explicit TRBL
+  □ SensoryBar animation uses measured pixel width (onLayout), not percentage strings
+  □ Card paddingBottom uses bottomPadding prop
+  □ Empty state only shows when !searchOpen
+
+NEW FEATURES:
+  □ trafficEnabled toggle in filter row — MapView trafficEnabled={trafficEnabled}
+  □ Place Details API fetched on tap: business_status, opening_hours, weekday_text
+  □ Busyness hint shown in card (estimateBusynessHint function, 3 levels, correct icons)
+  □ Sensory filter row: Calm / Moderate / Intense / All buttons below category chips
+  □ visiblePlaces computed from sensoryFilter — only filtered places show as pins
+  □ Calm Zone badge: Marker at cluster centroid when 3+ calm places within 0.5mi
+  □ computeCalmClusters() function implemented correctly
+  □ Search results include sensory score pill (batch-fetched from Supabase)
+  □ ScrollView wraps card content (verdict → breakdown), action buttons outside scroll
+
+VISUAL:
+  □ Pill pins have correct icon: leaf (calm) / alert-circle-outline (moderate) / warning-outline (intense)
+  □ Selected pin scaled 1.15x via static transform (not reanimated)
+  □ Verdict row tint is getSensoryColor + '18' (stronger than '11')
+  □ Card shadow: elevation 24, stronger values
+  □ Filter pills use Radius.pill (fully rounded)
+  □ FAB border color is isDark-aware
+
+ACCESSIBILITY:
+  □ accessibilityHint on sensory score values
+  □ Traffic toggle has on/off accessibilityLabel
+  □ Sensory filter buttons have accessibilityState selected
+  □ VerdictRow has accessibilityLiveRegion="polite"
+  □ Calm zone badge has proper accessibilityLabel
+
+TYPESCRIPT:
+  □ Zero errors from mcp__ide__getDiagnostics
+  □ All new interfaces defined
+  □ No implicit 'any'
+  □ All props typed with explicit interfaces
+
+═══════════════════════════════════════════════════════
+ITERATION STRATEGY
+═══════════════════════════════════════════════════════
+
+This is a large task. Work systematically:
+
+Iteration 1: Fix all 5 bugs first. Write the full file with all fixes applied.
+             Run diagnostics, fix errors.
+
+Iteration 2: Add trafficEnabled toggle + MapView prop. Add sensory filter buttons.
+             Add visiblePlaces computed value. Run diagnostics.
+
+Iteration 3: Add fetchPlaceDetails in SelectedPlaceCard. Add busynessHint.
+             Add ScrollView around card content. Run diagnostics.
+
+Iteration 4: Add computeCalmClusters + CalmZoneBadge. Add sensory pill to search results.
+             Fix SensoryBar animation to use measured pixel width. Run diagnostics.
+
+Iteration 5+: Polish everything in the quality bar. Fix any remaining issues.
+
+After EACH iteration: run mcp__ide__getDiagnostics and fix ALL errors before moving on.
+Do NOT skip the diagnostics step. TypeScript errors must be zero at every stage.

@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Skill(ralph-loop:ralph-loop)",
-      "mcp__ide__getDiagnostics"
+      "mcp__ide__getDiagnostics",
+      "Bash(npx expo:*)",
+      "Bash(npx tsc:*)",
+      "Bash(./gradlew.bat app:assembleDebug:*)",
+      "Bash(rm:*)",
+      "Read(//c/Program Files/Android/Android Studio/jbr/**)",
+      "Read(//c/Program Files/Android/Android Studio/**)"
     ]
   }
 }
