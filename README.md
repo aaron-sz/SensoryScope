@@ -2,99 +2,153 @@
 
 **Discover sensory-friendly places around you.**
 
-SensoryScope helps users with sensory sensitivities find comfortable environments. Search nearby places, view community sensory ratings (noise, light, crowd), and submit reviews — powered by Google Places API and Supabase.
+SensoryScope helps users with sensory sensitivities find comfortable environments. Search nearby places, view community sensory ratings (noise, light, crowd), explore an interactive map, and submit reviews — powered by Google Places API, Mapbox, and Supabase.
 
 ---
 
-## � API Keys
+## 🔑 API Keys Required
 
-- **Google Maps API Key** — kingjas will provide this. Needs **Places API** and **Places Photo API** enabled in Google Cloud Console.
-- **Supabase** — you already have access. URL and anon key are in `.env`.
+The app needs the following keys in a `.env` file at the project root:
+
+| Key | Service | Notes |
+|-----|---------|-------|
+| `EXPO_PUBLIC_SUPABASE_URL` | Supabase | Project URL |
+| `EXPO_PUBLIC_SUPABASE_ANON_KEY` | Supabase | Public anon key |
+| `EXPO_PUBLIC_GOOGLE_MAPS_API_KEY` | Google Cloud | Needs **Places API** + **Places Photo API** enabled |
+| `EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN` | Mapbox | Public token for map rendering |
+| `MAPBOX_DEFAULT_PUBLIC_TOKEN` | Mapbox | Used by `@rnmapbox/maps` plugin at build time |
 
 ---
 
 ## 🚀 Running the App
 
+> **This app requires a development build** — it uses `@rnmapbox/maps` (native module) which does not work in Expo Go.
+
 ```bash
 npm install
-npx expo start
-# Press 's' to switch to Expo Go → scan QR with your phone
-# No EAS build needed — runs in Expo Go directly
+
+# Build a development client (first time only)
+npx eas build --profile development --platform android
+
+# Install the generated APK on your device, then:
+npx expo start --dev-client
 ```
 
 ---
 
-## 📋 Summary of Changes (vs. GitHub `master`)
+## 📱 App Overview
 
-Everything below is relative to commit `5ca712f` ("ui + auth").
+### 4-Tab Structure
 
-### 🏗️ Major Architecture Changes
+| Tab | Screen | Description |
+|-----|--------|-------------|
+| 🧭 **Explore** | `explore.tsx` | Searchable place directory with category chips, distance/rating sort, radius filter, Open Now toggle |
+| 🗺️ **Map** | `map.tsx` | Interactive Mapbox dark-style map with color-coded sensory markers, legend, and location FAB |
+| ➕ **Rate** | `submit.tsx` | Submit sensory reviews with Google Places search, animated sliders, and live score preview |
+| 👤 **Profile** | `profile.tsx` | Auth status, sign in/out |
 
-- **Removed the Map tab entirely** — app is now a list-based place directory instead of a map POI viewer
-- **Removed the Detect tab** — not needed
-- **3 tabs now**: Explore → Rate → Profile
-- **Removed `react-native-maps`** — this was blocking Expo Go usage (required native EAS builds). App now works in Expo Go on both iOS and Android with zero native config
-- **Added Supabase `place_reviews` table** — stores sensory reviews keyed by Google `place_id` instead of internal location IDs
+### Key Features
 
-### 🆕 New Files
+- **Onboarding Flow** — 6-slide animated introduction for first-time users with sensory preference selection
+- **Google Places Search** — Text search with debounced results, photos, ratings, and distance
+- **Place Detail Sheet** — Bottom sheet with hero photo, meta chips (rating, distance, open/closed), averaged sensory bars, review history, inline review form, and Google/Apple Maps deep links
+- **Mapbox Map** — Dark-styled map with GeoJSON markers color-coded by sensory score (green = calm, yellow = moderate, red = intense)
+- **Sensory Review System** — Rate any place on 3 dimensions (Sound, Light, Crowd) from 1-10 with community averages
+- **GPS Location** — High-accuracy user positioning for nearest-first sorting and location-biased search
 
-| File | What it does |
-|------|-------------|
-| `components/PlaceCard.tsx` | Place card with Google photo, name, category emoji, address, star rating, distance, open/closed status. Photo auto-scales to 22% screen width |
-| `components/PlaceDetailSheet.tsx` | Bottom sheet: hero photo, meta chips, averaged sensory bars (noise/light/crowd), review history, inline review form (1-10 buttons + comment), close button, Google Maps + Apple Maps deep links |
-| `eas.json` | EAS config (optional, not required to run) |
+---
 
-### ✏️ What Changed in Existing Files
+## 🏗️ Architecture
 
-| File | Changes |
-|------|---------|
-| **`explore.tsx`** | Complete rewrite. 17 multi-select category chips, Google Text Search API for search (results show as full PlaceCards with photos — not text), sort by distance/rating, radius filter (1-25 mi), Open Now toggle, `BestForNavigation` GPS, instant search (no loading spinners) |
-| **`submit.tsx`** | Complete rewrite. Dark gradient UI, animated sliders for noise/light/crowd, location picker overlay, writes to Supabase `place_reviews` table |
-| **`profile.tsx`** | Expanded with styled profile card and auth status |
-| **`_layout.tsx` (tabs)** | 3-tab structure, hides old index/detect routes |
-| **`index.tsx`** | Was the Map screen (284 lines) → now a 10-line redirect to Explore |
-| **`detect.tsx`** | Was the Detect screen → now a 10-line redirect to Explore |
-| **`FloatingTabBar.tsx`** | Updated to only show Explore, Rate, Profile tabs |
-| **`app.json`** | Added Android package name, EAS project ID, removed `googleMaps` native config |
-| **`package.json`** | Removed `react-native-maps`, added `expo-dev-client` |
+### Frontend Stack
 
-### 🗄️ Database Changes (Supabase)
+- **Expo SDK 52** with Expo Router (file-based routing)
+- **React Native** with Reanimated 3 for animations
+- **@rnmapbox/maps** for the interactive map
+- **@rneui/themed** for UI components
+- **expo-haptics** for tactile feedback
 
-New table `place_reviews` — you can see it in the Supabase dashboard already:
+### Backend
+
+- **Supabase** (PostgreSQL + Auth + RLS)
+- **Google Places API** for place search, photos, and details
+
+### Database Tables
+
+| Table | Purpose |
+|-------|---------|
+| `place_reviews` | Sensory reviews keyed by Google `place_id` — used by both Explore (PlaceDetailSheet) and Rate tabs |
+| `locations` | Legacy preset locations with coords (PostGIS geography) |
+| `reviews` | Legacy reviews linked to `locations` table |
+| `profiles` | User profiles linked to Supabase auth |
+
+**`place_reviews` schema:**
 
 | Column | Type | Notes |
 |--------|------|-------|
 | `id` | bigint | Auto-increment PK |
-| `place_id` | text | Google's place ID string |
+| `place_id` | text | Google Places ID |
 | `place_name` | text | Cached place name |
 | `user_id` | uuid | FK → auth.users |
-| `sound_rating` | numeric | 1–10 |
-| `light_rating` | numeric | 1–10 |
-| `crowd_rating` | numeric | 1–10 |
+| `sound_rating` | numeric | 1–10, with check constraint |
+| `light_rating` | numeric | 1–10, with check constraint |
+| `crowd_rating` | numeric | 1–10, with check constraint |
 | `comment` | text | Optional |
 | `created_at` | timestamptz | Auto |
 
 **RLS:** Anyone can read. Auth'd users can create. Users can only update/delete their own.
 
-The old `locations` and `reviews` tables are still there, just unused by the new code.
+---
 
-### ❌ Removed
+## 📁 Project Structure
 
-- `react-native-maps` dependency (was blocking Expo Go)
-- Google Maps native config from `app.json`
-- Map tab and Detect tab functionality
+```
+app/
+├── _layout.tsx              # Root layout: auth, onboarding routing
+├── onboarding/
+│   ├── index.tsx            # 6-slide animated onboarding
+│   ├── constants.ts         # Slide data, colors, preferences
+│   └── hooks/               # Slide animation hooks
+└── (tabs)/
+    ├── _layout.tsx          # 4-tab layout with FloatingTabBar
+    ├── explore.tsx          # Place directory with search + filters
+    ├── map.tsx              # Mapbox map with sensory markers
+    ├── submit.tsx           # Rate a place (Google search + sliders)
+    └── profile.tsx          # Auth & profile
+
+components/
+├── PlaceCard.tsx            # Place card with photo, rating, distance
+├── PlaceDetailSheet.tsx     # Full detail bottom sheet with reviews
+├── LocationModal.tsx        # Map pin detail modal
+├── PlaceSearchBar.tsx       # Reusable search bar
+├── SensoryMap.native.tsx    # Mapbox map (native)
+├── SensoryMap.web.tsx       # Map placeholder (web)
+└── ui/
+    ├── FloatingTabBar.tsx   # Custom animated tab bar
+    └── AnimatedSlider.tsx   # Gradient slider with haptics
+
+hooks/
+└── useMapLocations.ts       # Fetches & formats Supabase data for map
+
+constants/
+└── theme.ts                 # Colors, spacing, radius, shadows
+
+lib/
+└── supabase.ts              # Supabase client init
+```
 
 ---
 
-## 📱 How It Works Now
+## 📋 Recent Changes
 
-1. **Explore tab** — GPS grabs your location → fetches nearby places from Google for selected categories → shows them as PlaceCards. You can search any place inline (results appear as cards with photos). Tap a card → PlaceDetailSheet opens.
+### UI/UX Fixes
+- **Fixed layout clipping** in PlaceDetailSheet — close button and hero image were being cut off by container bounds. Moved close button inside ScrollView as an overlay on the hero image
+- **Fixed filter overlap** — category chips and filter bar now hide when PlaceDetailSheet is open, preventing them from overlaying the sheet content
 
-2. **PlaceDetailSheet** — Shows the place photo, rating, distance, open status. Pulls reviews from Supabase `place_reviews` and averages the sensory scores into visual bars. Has an inline review form and Google/Apple Maps deep links. Close button (X) in top-right.
-
-3. **Rate tab** — Submit a sensory review for a place with sliders (1-10 for noise, light, crowd) + optional comment.
-
-4. **Profile tab** — Auth status, sign out.
+### Submit Tab Redesign
+- **Replaced preset location picker** with Google Places text search — users can now find and review any place
+- **Search results sorted nearest-first** using GPS with distance displayed (e.g. "2.1 mi")
+- **Switched to `place_reviews` table** — reviews submitted from the Rate tab now appear in the Explore tab's PlaceDetailSheet for the same location
 
 ---
 

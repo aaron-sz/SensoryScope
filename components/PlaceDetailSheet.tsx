@@ -152,27 +152,28 @@ export default function PlaceDetailSheet({ place, onClose }: Props) {
             >
                 <View style={[styles.handle, { backgroundColor: C.border }]} />
 
-                <TouchableOpacity
-                    onPress={onClose}
-                    style={[styles.closeBtn, { backgroundColor: C.surface }]}
-                    hitSlop={{ top: 15, right: 15, bottom: 15, left: 15 }}
-                >
-                    <Ionicons name="close" size={20} color={C.text} />
-                </TouchableOpacity>
-
                 <ScrollView showsVerticalScrollIndicator={false} bounces={false} keyboardShouldPersistTaps="handled">
-                    {/* Hero */}
-                    {photoRef ? (
-                        <Image
-                            source={{ uri: `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${photoRef}&key=${process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}` }}
-                            style={styles.heroPhoto}
-                            resizeMode="cover"
-                        />
-                    ) : (
-                        <View style={[styles.heroPhoto, { backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' }]}>
-                            <Ionicons name="image-outline" size={48} color={C.textDim} />
-                        </View>
-                    )}
+                    {/* Hero + Close button wrapper */}
+                    <View style={styles.heroWrapper}>
+                        {photoRef ? (
+                            <Image
+                                source={{ uri: `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${photoRef}&key=${process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY}` }}
+                                style={styles.heroPhoto}
+                                resizeMode="cover"
+                            />
+                        ) : (
+                            <View style={[styles.heroPhoto, { backgroundColor: C.surface, alignItems: 'center', justifyContent: 'center' }]}>
+                                <Ionicons name="image-outline" size={48} color={C.textDim} />
+                            </View>
+                        )}
+                        <TouchableOpacity
+                            onPress={onClose}
+                            style={[styles.closeBtn, { backgroundColor: C.surface }]}
+                            hitSlop={{ top: 15, right: 15, bottom: 15, left: 15 }}
+                        >
+                            <Ionicons name="close" size={20} color={C.text} />
+                        </TouchableOpacity>
+                    </View>
 
                     <View style={styles.content}>
                         <Text style={[styles.name, { color: C.text }]}>{place.name}</Text>
@@ -357,10 +358,11 @@ function MiniScore({ label, val }: { label: string; val: number }) {
 
 const styles = StyleSheet.create({
     backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
-    sheet: { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: '92%' },
+    sheet: { position: 'absolute', bottom: 0, left: 0, right: 0, borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: '92%', overflow: 'hidden' },
     handle: { width: 40, height: 5, borderRadius: 2.5, alignSelf: 'center', marginTop: 12, marginBottom: 8 },
-    closeBtn: { position: 'absolute', top: 16, right: 16, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', zIndex: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4, elevation: 3 },
-    heroPhoto: { width: '100%', height: 200 },
+    heroWrapper: { position: 'relative' },
+    closeBtn: { position: 'absolute', top: 12, right: 12, width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', zIndex: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.15, shadowRadius: 4, elevation: 5 },
+    heroPhoto: { width: '100%', height: 220 },
     content: { padding: Spacing.lg, gap: Spacing.md },
     name: { fontSize: 22, fontWeight: '800', letterSpacing: -0.3 },
     address: { fontSize: 14, lineHeight: 20 },
