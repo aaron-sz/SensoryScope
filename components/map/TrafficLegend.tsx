@@ -54,7 +54,7 @@ const TrafficLegend = memo(function TrafficLegend({
       accessibilityLabel="Traffic congestion color key"
     >
       <BlurView intensity={60} tint="dark" style={styles.blur}>
-        <Text style={styles.heading}>Traffic</Text>
+        <Text style={styles.heading} allowFontScaling={false}>Traffic</Text>
 
         {/* Gradient bar */}
         <LinearGradient
@@ -67,7 +67,7 @@ const TrafficLegend = memo(function TrafficLegend({
         {/* Labels row */}
         <View style={styles.labelsRow}>
           {LABELS.map((label) => (
-            <Text key={label} style={styles.label}>
+            <Text key={label} style={styles.label} allowFontScaling={false}>
               {label}
             </Text>
           ))}
@@ -85,10 +85,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     zIndex: 10,
     width: LEGEND_WIDTH,
-  },
-  blur: {
     borderRadius: 12,
     overflow: 'hidden',
+  },
+  blur: {
     paddingHorizontal: Spacing.sm + 2,
     paddingVertical: Spacing.sm,
   },

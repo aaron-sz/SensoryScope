@@ -335,7 +335,7 @@ export default function MapScreen() {
   const compassTop = insets.top + 120;
 
   // On tablet, sensory legend is top-right; FABs on right side need more clearance
-  const legendBottomOffset = isTablet ? 0 : showTraffic ? TAB_BAR_HEIGHT + 160 : TAB_BAR_HEIGHT + 12;
+  const legendBottomOffset = isTablet ? 0 : showTraffic ? TAB_BAR_HEIGHT + 90 : TAB_BAR_HEIGHT + 12;
   const legendTopOffset = insets.top + 130;
   const trafficLegendTopOffset = insets.top + 240;
 
@@ -350,6 +350,7 @@ export default function MapScreen() {
       <MapView
         style={styles.map}
         styleURL="mapbox://styles/mapbox/dark-v11"
+        // light day map: mapbox://styles/aaronnnn/cmmlf5jnx009t01qu40kb8xto
         scaleBarEnabled={false}
         attributionEnabled={false}
         logoEnabled={false}

@@ -63,8 +63,8 @@ const LegendRow = memo(function LegendRow({ color, label, range }: LegendRowData
   return (
     <View style={styles.row}>
       <View style={[styles.dot, { backgroundColor: color }]} />
-      <Text style={styles.label}>{label}</Text>
-      <Text style={styles.range}>{range}</Text>
+      <Text style={styles.label} allowFontScaling={false}>{label}</Text>
+      <Text style={styles.range} allowFontScaling={false}>{range}</Text>
     </View>
   );
 });
@@ -74,23 +74,26 @@ const styles = StyleSheet.create({
   outer: {
     position: 'absolute',
     zIndex: 10,
-  },
-  blur: {
+    width: 140,
+    // Clip the BlurView corners on Android (BlurView ignores borderRadius itself)
     borderRadius: 12,
     overflow: 'hidden',
+  },
+  blur: {
     paddingHorizontal: Spacing.sm + 2,
     paddingVertical: Spacing.sm,
   },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 7,
     paddingVertical: 3,
   },
   dot: {
     width: 9,
     height: 9,
     borderRadius: 4.5,
+    marginRight: 7,
+    flexShrink: 0,
   },
   label: {
     flex: 1,
@@ -101,7 +104,8 @@ const styles = StyleSheet.create({
   range: {
     fontSize: 10,
     color: '#94A3B8',
-    minWidth: 20,
+    width: 28,
     textAlign: 'right',
+    flexShrink: 0,
   },
 });

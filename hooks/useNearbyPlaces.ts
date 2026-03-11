@@ -2,29 +2,23 @@
  * useNearbyPlaces — Unified map data hook
  *
  * Fetches ALL nearby places from Google Places API and merges
- * with sensory rating data from Supabase. Returns a unified list
- * where rated places show score colors and unrated show neutral markers.
+ * with sensory rating data from Supabase. Supports dynamic "fetch around"
+ * so panning the map accumulates more places without replacing existing ones.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 
-// ── Types ────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 export type MapPlace = {
-  /** Stable unique key — Google Place ID or Supabase ID */
   id: string;
   name: string;
   latitude: number;
   longitude: number;
-  /** Google Places type (restaurant, cafe, park, …) */
   category: string;
-  /** Address snippet from Google */
   address?: string;
-  /** true = has sensory scores in Supabase */
   isRated: boolean;
-  /** Supabase row ID if matched */
   supabaseId?: string;
-  /** Google Places place_id — used for busyness / detail fetches */
   googlePlaceId?: string;
   avg_sound: number | null;
   avg_light: number | null;
@@ -55,6 +49,8 @@ export type UseNearbyPlacesResult = {
   loading: boolean;
   error: string | null;
   refetch: () => void;
+  /** Fetch places around a new map center and merge into the existing set. */
+  fetchAround: (lat: number, lng: number) => void;
 };
 
 // ── Haversine distance (meters) ───────────────────────────────────────────────
@@ -76,55 +72,79 @@ export function useNearbyPlaces(
   userLng: number | null,
   radiusMeters: number = 5000,
 ): UseNearbyPlacesResult {
+  // Accumulate all places across multiple fetch centers — keyed by place ID
+  const placeCache = useRef<Map<string, MapPlace>>(new Map());
+  const supabaseCache = useRef<SupabaseLocation[]>([]);
+
   const [places, setPlaces] = useState<MapPlace[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchPlaces = useCallback(async () => {
-    if (userLat == null || userLng == null) return;
+  // ── Core fetch: Google Places around a center + merge with Supabase ──────
+  const fetchAroundCenter = useCallback(
+    async (lat: number, lng: number, isInitial: boolean) => {
+      if (isInitial) setLoading(true);
+      setError(null);
 
-    setLoading(true);
-    setError(null);
+      try {
+        // On initial load fetch Supabase; on subsequent pans reuse cache
+        if (isInitial || supabaseCache.current.length === 0) {
+          const locs = await fetchSupabaseLocations();
+          supabaseCache.current = locs;
+        }
 
-    try {
-      const [googleResult, supabaseResult] = await Promise.allSettled([
-        fetchGooglePlaces(userLat, userLng, radiusMeters),
-        fetchSupabaseLocations(),
-      ]);
+        const googlePlaces = await fetchGooglePlaces(lat, lng, radiusMeters);
+        const merged = mergePlaces(googlePlaces, supabaseCache.current);
 
-      const googlePlaces: GooglePlace[] =
-        googleResult.status === 'fulfilled' ? googleResult.value : [];
-      const supabaseLocs: SupabaseLocation[] =
-        supabaseResult.status === 'fulfilled' ? supabaseResult.value : [];
+        // Merge into cache — existing entries are kept, new ones added
+        for (const place of merged) {
+          if (!placeCache.current.has(place.id)) {
+            placeCache.current.set(place.id, place);
+          }
+        }
 
-      const merged = mergePlaces(googlePlaces, supabaseLocs);
-      setPlaces(merged);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : 'Failed to load places';
-      console.error('[useNearbyPlaces]', msg);
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  }, [userLat, userLng, radiusMeters]);
+        setPlaces(Array.from(placeCache.current.values()));
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : 'Failed to load places';
+        console.error('[useNearbyPlaces]', msg);
+        setError(msg);
+      } finally {
+        if (isInitial) setLoading(false);
+      }
+    },
+    [radiusMeters],
+  );
 
+  // ── Initial load when user location arrives ────────────────────────────────
   useEffect(() => {
-    fetchPlaces();
-  }, [fetchPlaces]);
+    if (userLat == null || userLng == null) return;
+    placeCache.current.clear();
+    fetchAroundCenter(userLat, userLng, true);
+  }, [userLat, userLng, fetchAroundCenter]);
 
-  return { places, loading, error, refetch: fetchPlaces };
+  // ── Public API ────────────────────────────────────────────────────────────
+  const refetch = useCallback(() => {
+    if (userLat == null || userLng == null) return;
+    placeCache.current.clear();
+    supabaseCache.current = [];
+    fetchAroundCenter(userLat, userLng, true);
+  }, [userLat, userLng, fetchAroundCenter]);
+
+  const fetchAround = useCallback(
+    (lat: number, lng: number) => {
+      fetchAroundCenter(lat, lng, false);
+    },
+    [fetchAroundCenter],
+  );
+
+  return { places, loading, error, refetch, fetchAround };
 }
 
 // ── Google Places fetch ───────────────────────────────────────────────────────
-async function fetchGooglePlaces(
-  lat: number,
-  lng: number,
-  radius: number,
-): Promise<GooglePlace[]> {
+async function fetchGooglePlaces(lat: number, lng: number, radius: number): Promise<GooglePlace[]> {
   const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
   if (!API_KEY) return [];
 
-  // Broad "point_of_interest" fetch gets restaurants, cafes, parks, etc.
   const url =
     `https://maps.googleapis.com/maps/api/place/nearbysearch/json` +
     `?location=${lat},${lng}&radius=${radius}&type=point_of_interest&key=${API_KEY}`;
@@ -132,11 +152,9 @@ async function fetchGooglePlaces(
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Google Places HTTP ${res.status}`);
   const json = await res.json();
-
   if (json.status !== 'OK' && json.status !== 'ZERO_RESULTS') {
     throw new Error(`Google Places: ${json.status}`);
   }
-
   return (json.results ?? []) as GooglePlace[];
 }
 
@@ -145,23 +163,15 @@ async function fetchSupabaseLocations(): Promise<SupabaseLocation[]> {
   const { data, error } = await supabase
     .from('locations')
     .select('id, name, avg_sound, avg_light, avg_crowd, review_count, coords');
-
   if (error) throw new Error(error.message);
   return (data ?? []) as SupabaseLocation[];
 }
 
-// ── Merge strategy ─────────────────────────────────────────────────────────────
-// For each Supabase location, match to nearest Google Place within 150m.
-// Remaining Supabase locations become standalone rated markers.
-// Google Places without a match become unrated markers.
-function mergePlaces(
-  googlePlaces: GooglePlace[],
-  supabaseLocs: SupabaseLocation[],
-): MapPlace[] {
+// ── Merge strategy ────────────────────────────────────────────────────────────
+function mergePlaces(googlePlaces: GooglePlace[], supabaseLocs: SupabaseLocation[]): MapPlace[] {
   const MATCH_RADIUS_M = 150;
-  const used = new Set<string>(); // Google place_ids already matched
+  const used = new Set<string>();
 
-  // Valid Supabase locations with coordinates
   const validSupabase = supabaseLocs.filter(
     (loc) =>
       loc.coords != null &&
@@ -171,75 +181,47 @@ function mergePlaces(
 
   const result: MapPlace[] = [];
 
-  // 1. For each Supabase location, try to find a matching Google Place
   for (const loc of validSupabase) {
     const sLat = loc.coords!.coordinates[1];
     const sLng = loc.coords!.coordinates[0];
-
     let bestMatch: GooglePlace | null = null;
     let bestDist = MATCH_RADIUS_M;
 
     for (const gp of googlePlaces) {
       if (used.has(gp.place_id)) continue;
       const d = distanceMeters(sLat, sLng, gp.geometry.location.lat, gp.geometry.location.lng);
-      if (d < bestDist) {
-        bestDist = d;
-        bestMatch = gp;
-      }
+      if (d < bestDist) { bestDist = d; bestMatch = gp; }
     }
 
     if (bestMatch) {
       used.add(bestMatch.place_id);
       result.push({
-        id: bestMatch.place_id,
-        name: bestMatch.name,
-        latitude: bestMatch.geometry.location.lat,
-        longitude: bestMatch.geometry.location.lng,
-        category: primaryCategory(bestMatch.types ?? []),
-        address: bestMatch.vicinity,
-        isRated: true,
-        supabaseId: loc.id,
-        googlePlaceId: bestMatch.place_id,
-        avg_sound: loc.avg_sound,
-        avg_light: loc.avg_light,
-        avg_crowd: loc.avg_crowd,
+        id: bestMatch.place_id, name: bestMatch.name,
+        latitude: bestMatch.geometry.location.lat, longitude: bestMatch.geometry.location.lng,
+        category: primaryCategory(bestMatch.types ?? []), address: bestMatch.vicinity,
+        isRated: true, supabaseId: loc.id, googlePlaceId: bestMatch.place_id,
+        avg_sound: loc.avg_sound, avg_light: loc.avg_light, avg_crowd: loc.avg_crowd,
         review_count: loc.review_count ?? 0,
       });
     } else {
-      // Supabase location with no nearby Google match — show as standalone rated marker
       result.push({
-        id: loc.id,
-        name: loc.name,
-        latitude: sLat,
-        longitude: sLng,
-        category: 'point_of_interest',
-        isRated: true,
-        supabaseId: loc.id,
-        googlePlaceId: undefined,
-        avg_sound: loc.avg_sound,
-        avg_light: loc.avg_light,
-        avg_crowd: loc.avg_crowd,
+        id: loc.id, name: loc.name, latitude: sLat, longitude: sLng,
+        category: 'point_of_interest', isRated: true,
+        supabaseId: loc.id, googlePlaceId: undefined,
+        avg_sound: loc.avg_sound, avg_light: loc.avg_light, avg_crowd: loc.avg_crowd,
         review_count: loc.review_count ?? 0,
       });
     }
   }
 
-  // 2. Add unmatched Google Places as unrated markers
   for (const gp of googlePlaces) {
     if (used.has(gp.place_id)) continue;
     result.push({
-      id: gp.place_id,
-      name: gp.name,
-      latitude: gp.geometry.location.lat,
-      longitude: gp.geometry.location.lng,
-      category: primaryCategory(gp.types ?? []),
-      address: gp.vicinity,
-      isRated: false,
-      googlePlaceId: gp.place_id,
-      avg_sound: null,
-      avg_light: null,
-      avg_crowd: null,
-      review_count: 0,
+      id: gp.place_id, name: gp.name,
+      latitude: gp.geometry.location.lat, longitude: gp.geometry.location.lng,
+      category: primaryCategory(gp.types ?? []), address: gp.vicinity,
+      isRated: false, googlePlaceId: gp.place_id,
+      avg_sound: null, avg_light: null, avg_crowd: null, review_count: 0,
     });
   }
 
@@ -248,17 +230,11 @@ function mergePlaces(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const SKIP_TYPES = new Set([
-  'point_of_interest',
-  'establishment',
-  'premise',
-  'political',
-  'sublocality',
-  'sublocality_level_1',
+  'point_of_interest', 'establishment', 'premise',
+  'political', 'sublocality', 'sublocality_level_1',
 ]);
 
 function primaryCategory(types: string[]): string {
-  for (const t of types) {
-    if (!SKIP_TYPES.has(t)) return t;
-  }
+  for (const t of types) { if (!SKIP_TYPES.has(t)) return t; }
   return types[0] ?? 'point_of_interest';
 }
