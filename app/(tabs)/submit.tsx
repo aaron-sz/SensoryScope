@@ -2,26 +2,27 @@
  * Submit / Rating Screen
  *
  * Fully redesigned with:
- *  - Dark gradient background
+ *  - Google Places search to find any location
  *  - Live sensory score preview cards that update as sliders move
  *  - Custom AnimatedSlider components (gradient track, haptic ticks)
  *  - Staggered FadeInDown entrance animations for each section
- *  - Location picker overlay (RNEUI) + "Find Nearest" GPS button
  *  - Submit button with loading → success animation
- *  - Supabase review insert + location average recalculation
+ *  - Writes to Supabase `place_reviews` table (linked by Google place_id)
  */
 import { Ionicons } from '@expo/vector-icons';
-import { Button, Overlay, Text as RNEText } from '@rneui/themed';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import Animated, { FadeInDown } from 'react-native-reanimated';
@@ -60,66 +61,122 @@ const CATEGORIES = [
 
 type ScoreState = { sound: number; light: number; crowd: number };
 
+type PlaceResult = {
+  place_id: string;
+  name: string;
+  formatted_address?: string;
+  vicinity?: string;
+  distance_mi?: number;
+};
+
+function distanceMiles(lat1: number, lon1: number, lat2: number, lon2: number): number {
+  const R = 3958.8;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+    Math.cos((lat2 * Math.PI) / 180) *
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
 export default function SubmitScreen() {
   const { session } = useAuth();
 
-  const [locations, setLocations] = useState<any[]>([]);
-  const [locationId, setLocationId] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
-  const [pickerVisible, setPickerVisible] = useState(false);
   const [success, setSuccess] = useState(false);
+
+  // User location
+  const [userLat, setUserLat] = useState<number | null>(null);
+  const [userLng, setUserLng] = useState<number | null>(null);
+
+  // Selected place (from Google Places search)
+  const [selectedPlace, setSelectedPlace] = useState<PlaceResult | null>(null);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<PlaceResult[]>([]);
+  const searchTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const [scores, setScores] = useState<ScoreState>({ sound: 5, light: 5, crowd: 5 });
 
-  useEffect(() => { fetchLocations(); }, []);
-
-  const fetchLocations = async () => {
-    const { data, error } = await supabase.from('locations').select('*');
-    if (error) {
-      console.error('Error fetching locations:', error.code, '|', error.message, '|', error.details, '|', error.hint);
-    }
-    if (data) setLocations(data);
-  };
+  // Get user location on mount
+  useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        setUserLat(loc.coords.latitude);
+        setUserLng(loc.coords.longitude);
+      } catch (e) {
+        console.warn('Could not get location:', e);
+      }
+    })();
+  }, []);
 
   const setScore = (key: keyof ScoreState) => (val: number) =>
     setScores((prev) => ({ ...prev, [key]: val }));
 
-  const findNearest = async () => {
-    setLoading(true);
+  // Debounced Google Places search
+  const searchPlaces = useCallback(async (query: string) => {
+    const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!API_KEY || !query.trim()) {
+      setSearchResults([]);
+      return;
+    }
     try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission denied', 'Location access is needed to find the nearest spot.');
-        return;
+      let url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${API_KEY}`;
+      // Bias results near the user
+      if (userLat != null && userLng != null) {
+        url += `&location=${userLat},${userLng}&radius=30000`;
       }
-      const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      const { latitude, longitude } = loc.coords;
-
-      const withCoords = locations.map((l) => {
-        let lat = 0, lon = 0;
-        if (l.coords?.coordinates) { lon = l.coords.coordinates[0]; lat = l.coords.coordinates[1]; }
-        return { ...l, lat, lon };
-      });
-
-      withCoords.sort((a, b) => {
-        const dA = Math.hypot(a.lat - latitude, a.lon - longitude);
-        const dB = Math.hypot(b.lat - latitude, b.lon - longitude);
-        return dA - dB;
-      });
-
-      if (withCoords.length > 0) {
-        setLocationId(withCoords[0].id);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert('Nearest location', `Selected: ${withCoords[0].name}`);
-      } else {
-        Alert.alert('No locations', 'No locations found in the database yet.');
+      const res = await fetch(url);
+      const json = await res.json();
+      if (json.results) {
+        const enriched: PlaceResult[] = json.results.map((p: any) => ({
+          place_id: p.place_id,
+          name: p.name,
+          formatted_address: p.formatted_address,
+          vicinity: p.vicinity,
+          distance_mi:
+            userLat != null && userLng != null && p.geometry?.location
+              ? distanceMiles(userLat, userLng, p.geometry.location.lat, p.geometry.location.lng)
+              : undefined,
+        }));
+        // Sort nearest first
+        enriched.sort((a, b) => (a.distance_mi ?? Infinity) - (b.distance_mi ?? Infinity));
+        setSearchResults(enriched.slice(0, 8));
       }
     } catch (e) {
-      console.warn('Could not get location:', e);
-      Alert.alert('Location unavailable', 'Make sure location services are enabled.');
-    } finally {
-      setLoading(false);
+      console.warn('Place search error:', e);
     }
+  }, []);
+
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    searchTimerRef.current = setTimeout(() => searchPlaces(searchQuery), 300);
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    };
+  }, [searchQuery, searchPlaces]);
+
+  const selectPlace = (place: PlaceResult) => {
+    setSelectedPlace(place);
+    setSearchQuery('');
+    setSearchResults([]);
+    Keyboard.dismiss();
+    Haptics.selectionAsync();
+  };
+
+  const clearPlace = () => {
+    setSelectedPlace(null);
+    setSearchQuery('');
   };
 
   const submitReview = async () => {
@@ -127,15 +184,16 @@ export default function SubmitScreen() {
       Alert.alert('Sign in required', 'Head to the Profile tab to sign in before submitting.');
       return;
     }
-    if (!locationId) {
-      Alert.alert('Select a location', 'Choose a location above before submitting.');
+    if (!selectedPlace) {
+      Alert.alert('Select a location', 'Search and choose a place before submitting.');
       return;
     }
 
     setLoading(true);
 
-    const { error } = await supabase.from('reviews').insert({
-      location_id: locationId,
+    const { error } = await supabase.from('place_reviews').insert({
+      place_id: selectedPlace.place_id,
+      place_name: selectedPlace.name,
       user_id: session.user.id,
       sound_rating: scores.sound,
       light_rating: scores.light,
@@ -149,25 +207,6 @@ export default function SubmitScreen() {
       return;
     }
 
-    // Recalculate averages for this location
-    const { data: reviews } = await supabase
-      .from('reviews')
-      .select('sound_rating, light_rating, crowd_rating')
-      .eq('location_id', locationId);
-
-    if (reviews && reviews.length > 0) {
-      const count = reviews.length;
-      const avg = (key: string) =>
-        reviews.reduce((acc: number, r: any) => acc + (r[key] ?? 0), 0) / count;
-
-      await supabase.from('locations').update({
-        avg_sound: avg('sound_rating'),
-        avg_light: avg('light_rating'),
-        avg_crowd: avg('crowd_rating'),
-        review_count: count,
-      }).eq('id', locationId);
-    }
-
     setLoading(false);
     setSuccess(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -175,12 +214,12 @@ export default function SubmitScreen() {
     setTimeout(() => {
       setSuccess(false);
       setScores({ sound: 5, light: 5, crowd: 5 });
-      setLocationId(null);
+      setSelectedPlace(null);
     }, 2200);
   };
 
-  const selectedName = locations.find((l) => l.id === locationId)?.name ?? null;
   const overallPreview = ((scores.sound + scores.light + scores.crowd) / 3).toFixed(1);
+  const showResults = searchQuery.trim().length > 0 && searchResults.length > 0;
 
   return (
     <LinearGradient
@@ -215,32 +254,84 @@ export default function SubmitScreen() {
           </View>
         </Animated.View>
 
-        {/* ── Location picker ── */}
+        {/* ── Location Search ── */}
         <Animated.View entering={FadeInDown.delay(160).springify().damping(20)} style={styles.section}>
           <Text style={styles.sectionLabel}>Location</Text>
-          <View style={styles.locationRow}>
-            <Pressable
-              style={[styles.locationBtn, selectedName ? styles.locationBtnActive : null]}
-              onPress={() => setPickerVisible(true)}
-            >
-              <Ionicons
-                name="location"
-                size={16}
-                color={selectedName ? Colors.primaryLight : Colors.textMuted}
-              />
-              <Text
-                style={[styles.locationBtnText, selectedName ? styles.locationBtnTextActive : null]}
-                numberOfLines={1}
-              >
-                {selectedName ?? 'Choose location…'}
-              </Text>
-              <Ionicons name="chevron-down" size={14} color={Colors.textDim} />
-            </Pressable>
 
-            <Pressable style={styles.nearestBtn} onPress={findNearest} disabled={loading}>
-              <Ionicons name="navigate" size={16} color={Colors.accent} />
-            </Pressable>
-          </View>
+          {selectedPlace ? (
+            /* Selected place display */
+            <View style={styles.selectedPlaceRow}>
+              <View style={styles.selectedPlaceInfo}>
+                <View style={styles.selectedPlaceIcon}>
+                  <Ionicons name="location" size={18} color={Colors.primaryLight} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.selectedPlaceName} numberOfLines={1}>
+                    {selectedPlace.name}
+                  </Text>
+                  {!!(selectedPlace.formatted_address || selectedPlace.vicinity) && (
+                    <Text style={styles.selectedPlaceAddress} numberOfLines={1}>
+                      {selectedPlace.formatted_address || selectedPlace.vicinity}
+                    </Text>
+                  )}
+                </View>
+              </View>
+              <Pressable onPress={clearPlace} style={styles.clearBtn} hitSlop={10}>
+                <Ionicons name="close-circle" size={22} color={Colors.textMuted} />
+              </Pressable>
+            </View>
+          ) : (
+            /* Search input */
+            <View style={styles.searchContainer}>
+              <View style={[styles.searchBar, searchQuery.length > 0 && styles.searchBarFocused]}>
+                <Ionicons
+                  name="search"
+                  size={18}
+                  color={searchQuery.length > 0 ? Colors.primaryLight : Colors.textMuted}
+                />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Search for any place..."
+                  placeholderTextColor={Colors.textDim}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  returnKeyType="search"
+                />
+                {searchQuery.length > 0 && (
+                  <Pressable onPress={() => setSearchQuery('')} hitSlop={10}>
+                    <Ionicons name="close-circle" size={18} color={Colors.textDim} />
+                  </Pressable>
+                )}
+              </View>
+
+              {/* Search results dropdown */}
+              {showResults && (
+                <View style={styles.resultsDropdown}>
+                  {searchResults.map((place) => (
+                    <TouchableOpacity
+                      key={place.place_id}
+                      style={styles.resultItem}
+                      onPress={() => selectPlace(place)}
+                      activeOpacity={0.7}
+                    >
+                      <Ionicons name="location-outline" size={16} color={Colors.textMuted} style={{ marginTop: 2 }} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.resultName} numberOfLines={1}>{place.name}</Text>
+                        {!!(place.formatted_address || place.vicinity) && (
+                          <Text style={styles.resultAddress} numberOfLines={1}>
+                            {place.formatted_address || place.vicinity}
+                          </Text>
+                        )}
+                      </View>
+                      {place.distance_mi != null && (
+                        <Text style={styles.resultDistance}>{place.distance_mi.toFixed(1)} mi</Text>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
         </Animated.View>
 
         {/* ── Sliders ── */}
@@ -288,50 +379,6 @@ export default function SubmitScreen() {
           </Pressable>
         </Animated.View>
       </ScrollView>
-
-      {/* ── Location picker overlay ── */}
-      <Overlay
-        isVisible={pickerVisible}
-        onBackdropPress={() => setPickerVisible(false)}
-        overlayStyle={styles.overlay}
-      >
-        <View>
-          <RNEText h4 style={styles.overlayTitle}>Select Location</RNEText>
-          <ScrollView style={styles.overlayList} showsVerticalScrollIndicator={false}>
-            {locations.map((l) => (
-              <Pressable
-                key={l.id}
-                style={styles.listItem}
-                onPress={() => {
-                  setLocationId(l.id);
-                  setPickerVisible(false);
-                  Haptics.selectionAsync();
-                }}
-              >
-                <View style={styles.listItemContent}>
-                  <Text style={styles.listItemTitle}>{l.name}</Text>
-                  {!!l.description && (
-                    <Text style={styles.listItemSub} numberOfLines={1}>
-                      {l.description}
-                    </Text>
-                  )}
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={Colors.textDim} />
-              </Pressable>
-            ))}
-            {locations.length === 0 && (
-              <Text style={styles.emptyOverlay}>No locations loaded yet.</Text>
-            )}
-          </ScrollView>
-          <Button
-            title="Cancel"
-            type="clear"
-            onPress={() => setPickerVisible(false)}
-            titleStyle={{ color: Colors.textMuted }}
-            containerStyle={{ marginTop: Spacing.sm }}
-          />
-        </View>
-      </Overlay>
     </LinearGradient>
   );
 }
@@ -434,13 +481,12 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
 
-  // Location row
-  locationRow: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
+  // Search bar
+  searchContainer: {
+    position: 'relative',
+    zIndex: 10,
   },
-  locationBtn: {
-    flex: 1,
+  searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.sm,
@@ -450,30 +496,96 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: Colors.border,
     paddingHorizontal: Spacing.md,
-    paddingVertical: 13,
+    height: 48,
   },
-  locationBtnActive: {
-    borderColor: Colors.primary,
+  searchBarFocused: {
+    borderColor: Colors.primaryLight,
     backgroundColor: Colors.elevated,
   },
-  locationBtnText: {
+  searchInput: {
     flex: 1,
-    color: Colors.textMuted,
-    fontSize: 14,
-  },
-  locationBtnTextActive: {
+    fontSize: 15,
     color: Colors.text,
-    fontWeight: '600',
+    padding: 0,
   },
-  nearestBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: Radius.md,
+
+  // Search results dropdown
+  resultsDropdown: {
     backgroundColor: Colors.surface,
+    borderRadius: Radius.md,
+    borderCurve: 'continuous',
     borderWidth: 1,
     borderColor: Colors.border,
+    marginTop: 6,
+    overflow: 'hidden',
+    boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
+  },
+  resultItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  resultName: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.text,
+  },
+  resultAddress: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  resultDistance: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: Colors.accent,
+    marginLeft: Spacing.sm,
+    marginTop: 2,
+  },
+
+  // Selected place display
+  selectedPlaceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.elevated,
+    borderRadius: Radius.md,
+    borderCurve: 'continuous',
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 12,
+    gap: Spacing.sm,
+  },
+  selectedPlaceInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  selectedPlaceIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: Colors.primary + '18',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  selectedPlaceName: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: Colors.text,
+  },
+  selectedPlaceAddress: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    marginTop: 2,
+  },
+  clearBtn: {
+    padding: 4,
   },
 
   // Submit button
@@ -499,49 +611,5 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     letterSpacing: 0.3,
-  },
-
-  // Overlay / picker
-  overlay: {
-    width: '88%',
-    maxHeight: '70%',
-    borderRadius: Radius.xl,
-    padding: Spacing.lg,
-    backgroundColor: Colors.surface,
-  },
-  overlayTitle: {
-    color: Colors.text,
-    marginBottom: Spacing.md,
-    textAlign: 'center',
-    fontSize: 18,
-  },
-  overlayList: { maxHeight: 360 },
-  listItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.surface,
-    paddingVertical: Spacing.sm + 2,
-    paddingHorizontal: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
-  },
-  listItemContent: {
-    flex: 1,
-  },
-  listItemTitle: {
-    color: Colors.text,
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  listItemSub: {
-    color: Colors.textMuted,
-    fontSize: 12,
-    marginTop: 2,
-  },
-  emptyOverlay: {
-    textAlign: 'center',
-    color: Colors.textMuted,
-    marginTop: Spacing.lg,
-    fontSize: 14,
   },
 });

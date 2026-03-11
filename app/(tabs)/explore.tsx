@@ -305,8 +305,8 @@ export default function ExploreScreen() {
           </Pressable>
         </View>
 
-        {/* Categories & Filters — hidden while searching */}
-        {!searchOpen && (
+        {/* Categories & Filters — hidden while searching or viewing detail */}
+        {!searchOpen && !selectedPlace && (
           <View>
             <ScrollView
               horizontal
