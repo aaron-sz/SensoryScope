@@ -1,14 +1,11 @@
 /**
  * Rate / Submit Screen — "Vibe Check"
- *
- * Unique mechanic: instead of sliders, each sensory category gets 5 large
- * "Vibe Tiles" (emoji + label). One tap per category, zero cognitive load.
- * All 3 picked → floating submit CTA animates up.
- *
- * Data flow is unchanged: Google Places search → Supabase place_reviews insert.
+ * 1–10 dot scale per category. Tap any dot to set the level.
+ * Card tints to match the selected intensity. Large animated value readout.
  */
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -27,66 +24,81 @@ import Animated, {
   FadeInDown,
   FadeInUp,
   FadeOut,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-  withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BadgeDef, earnedByCount, getNewlyEarned } from '../../constants/badges';
 import { Radius, Spacing, useColors } from '../../constants/theme';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../_layout';
 
-// ── Score mapping: tile index → DB value (1–10 scale) ───────────────────────
-const TILE_SCORES = [1, 3, 5, 7, 10] as const;
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-// ── Color ramp: calm → intense (index-matched to TILE_SCORES) ───────────────
-const TILE_COLORS = ['#3ab98f', '#7ec87e', '#ce9b43', '#e07040', '#d74c64'];
+/**
+ * Progressive emoji per category — changes every 2 values (5 distinct steps).
+ * step = floor((value - 1) / 2)  →  0..4
+ */
+const CATEGORY_EMOJIS: Record<string, string[]> = {
+  sound: ['🍃', '🔈', '🔉', '🔊', '📣'],   // leaf → soft → medium → loud → megaphone
+  light: ['🌑', '🕯️',  '💡', '☀️', '🌟'],  // dark → candle → bulb → sun → blinding
+  crowd: ['🧍', '👥',  '👨‍👩‍👦', '👨‍👩‍👧‍👦', '🏟️'], // alone → pair → family → big family → stadium
+};
 
-// ── Category definitions ─────────────────────────────────────────────────────
+function getDynamicEmoji(key: string, value: number | null): string | null {
+  if (value === null) return null;
+  const emojis = CATEGORY_EMOJIS[key];
+  if (!emojis) return null;
+  return emojis[Math.min(Math.floor((value - 1) / 2), emojis.length - 1)];
+}
+
+/** Returns which emoji step (0-4) a value maps to — used as animation key */
+function emojiStep(value: number | null): number {
+  if (value === null) return -1;
+  return Math.min(Math.floor((value - 1) / 2), 4);
+}
+
+/** Color zone for a 1–10 rating value */
+function dotColor(n: number): string {
+  if (n <= 3) return '#3ab98f';
+  if (n <= 6) return '#ce9b43';
+  if (n <= 8) return '#e07040';
+  return '#d74c64';
+}
+
+/** Descriptive word for a value in a given category */
+const VALUE_WORDS: Record<string, string[]> = {
+  sound: ['Silent', 'Silent', 'Quiet', 'Quiet', 'Normal', 'Normal', 'Loud', 'Loud', 'Intense', 'Intense'],
+  light: ['Dark', 'Dark', 'Dim', 'Dim', 'Bright', 'Bright', 'Vivid', 'Vivid', 'Glaring', 'Blinding'],
+  crowd: ['Empty', 'Empty', 'Sparse', 'Sparse', 'Some', 'Some', 'Busy', 'Busy', 'Packed', 'Packed'],
+};
+
+// ── Category config ───────────────────────────────────────────────────────────
 const CATEGORIES = [
   {
     key: 'sound' as const,
     label: 'Sound',
     icon: 'volume-2' as const,
     question: 'How loud is it right now?',
-    tiles: [
-      { emoji: '🤫', label: 'Silent'   },
-      { emoji: '🔈', label: 'Quiet'    },
-      { emoji: '🔉', label: 'Moderate' },
-      { emoji: '🔊', label: 'Loud'     },
-      { emoji: '📣', label: 'Intense'  },
-    ],
+    leftLabel: 'Silent',
+    rightLabel: 'Intense',
   },
   {
     key: 'light' as const,
     label: 'Light',
     icon: 'sun' as const,
     question: 'How bright is the lighting?',
-    tiles: [
-      { emoji: '🌑', label: 'Dark'     },
-      { emoji: '🌤️', label: 'Dim'      },
-      { emoji: '☀️', label: 'Bright'   },
-      { emoji: '✨', label: 'Vivid'    },
-      { emoji: '🌟', label: 'Blinding' },
-    ],
+    leftLabel: 'Dark',
+    rightLabel: 'Blinding',
   },
   {
     key: 'crowd' as const,
     label: 'Crowd',
     icon: 'users' as const,
-    question: 'How busy is the space?',
-    tiles: [
-      { emoji: '🌿', label: 'Empty'  },
-      { emoji: '🧍', label: 'Sparse' },
-      { emoji: '👥', label: 'Some'   },
-      { emoji: '🏃', label: 'Busy'   },
-      { emoji: '🎉', label: 'Packed' },
-    ],
+    question: 'How busy is it?',
+    leftLabel: 'Empty',
+    rightLabel: 'Packed',
   },
 ] as const;
 
-// ── Types ────────────────────────────────────────────────────────────────────
 type CategoryKey = (typeof CATEGORIES)[number]['key'];
 type Picks = Record<CategoryKey, number | null>;
 
@@ -109,7 +121,7 @@ function distanceMiles(lat1: number, lon1: number, lat2: number, lon2: number): 
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ── Main screen ──────────────────────────────────────────────────────────────
+// ── Main screen ───────────────────────────────────────────────────────────────
 export default function SubmitScreen() {
   const { session } = useAuth();
   const C = useColors();
@@ -118,8 +130,9 @@ export default function SubmitScreen() {
   const [picks, setPicks] = useState<Picks>({ sound: null, light: null, crowd: null });
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [newBadges, setNewBadges] = useState<BadgeDef[]>([]);
+  const prevCountRef = useRef(0);
 
-  // Location
   const [userLat, setUserLat] = useState<number | null>(null);
   const [userLng, setUserLng] = useState<number | null>(null);
   const [selectedPlace, setSelectedPlace] = useState<PlaceResult | null>(null);
@@ -128,6 +141,16 @@ export default function SubmitScreen() {
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const allPicked = CATEGORIES.every((c) => picks[c.key] !== null);
+  const ratedCount = CATEGORIES.filter((c) => picks[c.key] !== null).length;
+
+  useEffect(() => {
+    if (!session?.user.id) return;
+    supabase
+      .from('place_reviews')
+      .select('*', { count: 'exact', head: true })
+      .eq('user_id', session.user.id)
+      .then(({ count }) => { prevCountRef.current = count ?? 0; });
+  }, [session?.user.id]);
 
   useEffect(() => {
     (async () => {
@@ -137,40 +160,29 @@ export default function SubmitScreen() {
         const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
         setUserLat(loc.coords.latitude);
         setUserLng(loc.coords.longitude);
-      } catch {
-        // Location unavailable — search still works without bias
-      }
+      } catch { /* silent */ }
     })();
   }, []);
 
-  const searchPlaces = useCallback(
-    async (query: string) => {
-      const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
-      if (!API_KEY || !query.trim()) { setSearchResults([]); return; }
-      try {
-        let url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${API_KEY}`;
-        if (userLat != null && userLng != null) url += `&location=${userLat},${userLng}&radius=30000`;
-        const res = await fetch(url);
-        const json = await res.json();
-        if (json.results) {
-          const enriched: PlaceResult[] = json.results.map((p: any) => ({
-            place_id: p.place_id,
-            name: p.name,
-            formatted_address: p.formatted_address,
-            distance_mi:
-              userLat != null && userLng != null && p.geometry?.location
-                ? distanceMiles(userLat, userLng, p.geometry.location.lat, p.geometry.location.lng)
-                : undefined,
-          }));
-          enriched.sort((a, b) => (a.distance_mi ?? Infinity) - (b.distance_mi ?? Infinity));
-          setSearchResults(enriched.slice(0, 8));
-        }
-      } catch {
-        // Search failed silently
+  const searchPlaces = useCallback(async (query: string) => {
+    const KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
+    if (!KEY || !query.trim()) { setSearchResults([]); return; }
+    try {
+      let url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${KEY}`;
+      if (userLat != null && userLng != null) url += `&location=${userLat},${userLng}&radius=30000`;
+      const json = await (await fetch(url)).json();
+      if (json.results) {
+        const enriched: PlaceResult[] = json.results.map((p: any) => ({
+          place_id: p.place_id, name: p.name, formatted_address: p.formatted_address,
+          distance_mi: userLat != null && userLng != null && p.geometry?.location
+            ? distanceMiles(userLat, userLng, p.geometry.location.lat, p.geometry.location.lng)
+            : undefined,
+        }));
+        enriched.sort((a, b) => (a.distance_mi ?? Infinity) - (b.distance_mi ?? Infinity));
+        setSearchResults(enriched.slice(0, 8));
       }
-    },
-    [userLat, userLng],
-  );
+    } catch { /* silent */ }
+  }, [userLat, userLng]);
 
   useEffect(() => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
@@ -188,14 +200,8 @@ export default function SubmitScreen() {
   };
 
   const submitReview = async () => {
-    if (!session) {
-      Alert.alert('Sign in required', 'Head to the Profile tab to sign in before submitting.');
-      return;
-    }
-    if (!selectedPlace) {
-      Alert.alert('Select a location', 'Search and choose a place first.');
-      return;
-    }
+    if (!session) { Alert.alert('Sign in required', 'Head to the Profile tab to sign in.'); return; }
+    if (!selectedPlace) { Alert.alert('Select a location', 'Search and choose a place first.'); return; }
     setLoading(true);
     const { error } = await supabase.from('place_reviews').insert({
       place_id: selectedPlace.place_id,
@@ -208,35 +214,46 @@ export default function SubmitScreen() {
     });
     setLoading(false);
     if (error) { Alert.alert('Submission failed', error.message); return; }
+
+    const prevCount = prevCountRef.current;
+    const newCount = prevCount + 1;
+    prevCountRef.current = newCount;
+    const newly = getNewlyEarned(earnedByCount(prevCount), earnedByCount(newCount));
+    setNewBadges(newly);
     setSuccess(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     setTimeout(() => {
       setSuccess(false);
+      setNewBadges([]);
       setPicks({ sound: null, light: null, crowd: null });
       setSelectedPlace(null);
-    }, 2500);
+    }, 3200);
   };
 
   return (
     <View style={[styles.root, { backgroundColor: C.bg }]}>
+      {/* Very faint green wash at top — only visual accent on the background */}
+      <LinearGradient
+        colors={[C.calm + '14', 'transparent']}
+        style={styles.topGradient}
+        pointerEvents="none"
+      />
+
       <ScrollView
-        contentContainerStyle={[
-          styles.scroll,
-          { paddingTop: insets.top + Spacing.lg, paddingBottom: 160 },
-        ]}
+        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + Spacing.lg, paddingBottom: 160 }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
         {/* Header */}
-        <Animated.View entering={FadeInDown.delay(0).duration(380)}>
-          <Text style={[styles.screenTitle, { color: C.text }]}>Vibe Check</Text>
-          <Text style={[styles.screenSub, { color: C.textMuted }]}>
-            Share what this space feels like right now
+        <Animated.View entering={FadeInDown.delay(0).duration(400)}>
+          <Text style={[styles.title, { color: C.text }]}>How does{'\n'}it feel?</Text>
+          <Text style={[styles.subtitle, { color: C.textMuted }]}>
+            Rate 1–10 · {ratedCount} of 3 rated
           </Text>
         </Animated.View>
 
-        {/* Location picker */}
-        <Animated.View entering={FadeInDown.delay(60).duration(380)} style={styles.locationSection}>
+        {/* Location */}
+        <Animated.View entering={FadeInDown.delay(60).duration(400)} style={styles.locationSection}>
           <LocationPicker
             selected={selectedPlace}
             query={searchQuery}
@@ -252,54 +269,31 @@ export default function SubmitScreen() {
         {CATEGORIES.map((cat, i) => (
           <Animated.View
             key={cat.key}
-            entering={FadeInDown.delay(120 + i * 70).duration(380)}
+            entering={FadeInDown.delay(100 + i * 70).duration(400)}
             style={styles.cardSpacing}
           >
             <CategoryCard
               category={cat}
               selected={picks[cat.key]}
-              onPick={(score) => {
-                setPicks((p) => ({ ...p, [cat.key]: score }));
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              onPick={(v) => {
+                setPicks((p) => ({ ...p, [cat.key]: v }));
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               }}
               C={C}
             />
           </Animated.View>
         ))}
-
-        {/* Progress hint */}
-        <Animated.View entering={FadeInDown.delay(380).duration(380)} style={styles.progressRow}>
-          {CATEGORIES.map((cat) => (
-            <View
-              key={cat.key}
-              style={[
-                styles.progressDot,
-                {
-                  backgroundColor: picks[cat.key] !== null
-                    ? TILE_COLORS[TILE_SCORES.indexOf(picks[cat.key] as any)]
-                    : C.border,
-                },
-              ]}
-            />
-          ))}
-          <Text style={[styles.progressLabel, { color: C.textDim }]}>
-            {CATEGORIES.filter((c) => picks[c.key] !== null).length} / 3 rated
-          </Text>
-        </Animated.View>
       </ScrollView>
 
-      {/* Floating submit CTA — appears when all 3 are picked */}
+      {/* Floating submit */}
       {allPicked && (
         <Animated.View
           entering={FadeInUp.springify().damping(22).stiffness(300)}
           exiting={FadeOut.duration(180)}
-          style={[
-            styles.submitWrap,
-            { paddingBottom: Math.max(insets.bottom, Spacing.md) + 72 },
-          ]}
+          style={[styles.submitWrap, { paddingBottom: Math.max(insets.bottom, Spacing.md) + 72 }]}
         >
           <Pressable
-            style={[styles.submitBtn, { backgroundColor: '#3ab98f', opacity: loading ? 0.7 : 1 }]}
+            style={[styles.submitBtn, { opacity: loading ? 0.7 : 1 }]}
             onPress={submitReview}
             disabled={loading}
           >
@@ -309,67 +303,69 @@ export default function SubmitScreen() {
         </Animated.View>
       )}
 
-      {/* Success overlay */}
+      {/* Success / badge overlay */}
       {success && (
         <Animated.View
           entering={FadeIn.duration(300)}
           exiting={FadeOut.duration(300)}
           style={[StyleSheet.absoluteFill, styles.successOverlay, { backgroundColor: C.bg }]}
         >
-          <Text style={styles.successEmoji}>🌿</Text>
-          <Text style={[styles.successTitle, { color: C.text }]}>Vibe Shared!</Text>
-          <Text style={[styles.successSub, { color: C.textMuted }]}>
-            Thanks for helping the community find their calm
-          </Text>
+          {newBadges.length > 0 ? (
+            <>
+              <Text style={styles.successEmoji}>🎖️</Text>
+              <Text style={[styles.successTitle, { color: C.text }]}>Badge Unlocked!</Text>
+              {newBadges.map((badge) => (
+                <View key={badge.id} style={[styles.badgeCard, { backgroundColor: C.surface, borderColor: C.border }]}>
+                  <Text style={styles.badgeEmoji}>{badge.emoji}</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.badgeLabel, { color: C.text }]}>{badge.label}</Text>
+                    <Text style={[styles.badgeDesc, { color: C.textMuted }]}>{badge.desc}</Text>
+                  </View>
+                </View>
+              ))}
+              <Text style={[styles.successSub, { color: C.textMuted }]}>Vibe shared too — thanks for helping out!</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.successEmoji}>🌿</Text>
+              <Text style={[styles.successTitle, { color: C.text }]}>Vibe Shared!</Text>
+              <Text style={[styles.successSub, { color: C.textMuted }]}>Thanks for helping the community find their calm</Text>
+            </>
+          )}
         </Animated.View>
       )}
     </View>
   );
 }
 
-// ── Location Picker ──────────────────────────────────────────────────────────
+// ── Location Picker ───────────────────────────────────────────────────────────
 function LocationPicker({
-  selected,
-  query,
-  results,
-  onChangeQuery,
-  onSelect,
-  onClear,
-  C,
+  selected, query, results, onChangeQuery, onSelect, onClear, C,
 }: {
-  selected: PlaceResult | null;
-  query: string;
-  results: PlaceResult[];
-  onChangeQuery: (q: string) => void;
-  onSelect: (p: PlaceResult) => void;
-  onClear: () => void;
-  C: ReturnType<typeof useColors>;
+  selected: PlaceResult | null; query: string; results: PlaceResult[];
+  onChangeQuery: (q: string) => void; onSelect: (p: PlaceResult) => void;
+  onClear: () => void; C: ReturnType<typeof useColors>;
 }) {
-  const showResults = query.trim().length > 0 && results.length > 0;
-
   if (selected) {
     return (
       <View style={[styles.selectedChip, { backgroundColor: C.surface, borderColor: C.border }]}>
-        <View style={[styles.selectedIconWrap, { backgroundColor: C.elevated }]}>
+        <View style={[styles.selectedIcon, { backgroundColor: C.elevated }]}>
           <Feather name="map-pin" size={14} color={C.accent} />
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={[styles.selectedName, { color: C.text }]} numberOfLines={1}>
-            {selected.name}
-          </Text>
+          <Text style={[styles.selectedName, { color: C.text }]} numberOfLines={1}>{selected.name}</Text>
           {selected.formatted_address && (
-            <Text style={[styles.selectedAddr, { color: C.textMuted }]} numberOfLines={1}>
-              {selected.formatted_address}
-            </Text>
+            <Text style={[styles.selectedAddr, { color: C.textMuted }]} numberOfLines={1}>{selected.formatted_address}</Text>
           )}
         </View>
-        <Pressable onPress={onClear} hitSlop={12} style={styles.clearBtn}>
+        <Pressable onPress={onClear} hitSlop={12}>
           <Feather name="x" size={16} color={C.textDim} />
         </Pressable>
       </View>
     );
   }
 
+  const showResults = query.trim().length > 0 && results.length > 0;
   return (
     <View style={{ zIndex: 10 }}>
       <View style={[styles.searchBar, { backgroundColor: C.surface, borderColor: C.border }]}>
@@ -388,7 +384,6 @@ function LocationPicker({
           </Pressable>
         )}
       </View>
-
       {showResults && (
         <View style={[styles.resultsBox, { backgroundColor: C.elevated, borderColor: C.border }]}>
           {results.map((place, i) => (
@@ -396,26 +391,17 @@ function LocationPicker({
               key={place.place_id}
               onPress={() => onSelect(place)}
               activeOpacity={0.7}
-              style={[
-                styles.resultRow,
-                i < results.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border },
-              ]}
+              style={[styles.resultRow, i < results.length - 1 && { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border }]}
             >
               <Feather name="map-pin" size={14} color={C.textDim} style={{ marginTop: 2 }} />
               <View style={{ flex: 1 }}>
-                <Text style={[styles.resultName, { color: C.text }]} numberOfLines={1}>
-                  {place.name}
-                </Text>
+                <Text style={[styles.resultName, { color: C.text }]} numberOfLines={1}>{place.name}</Text>
                 {place.formatted_address && (
-                  <Text style={[styles.resultAddr, { color: C.textMuted }]} numberOfLines={1}>
-                    {place.formatted_address}
-                  </Text>
+                  <Text style={[styles.resultAddr, { color: C.textMuted }]} numberOfLines={1}>{place.formatted_address}</Text>
                 )}
               </View>
               {place.distance_mi != null && (
-                <Text style={[styles.resultDist, { color: C.accent }]}>
-                  {place.distance_mi.toFixed(1)} mi
-                </Text>
+                <Text style={[styles.resultDist, { color: C.accent }]}>{place.distance_mi.toFixed(1)} mi</Text>
               )}
             </TouchableOpacity>
           ))}
@@ -425,377 +411,198 @@ function LocationPicker({
   );
 }
 
-// ── Category Card ────────────────────────────────────────────────────────────
+// ── Category Card ─────────────────────────────────────────────────────────────
 function CategoryCard({
-  category,
-  selected,
-  onPick,
-  C,
+  category, selected, onPick, C,
 }: {
   category: (typeof CATEGORIES)[number];
   selected: number | null;
-  onPick: (score: number) => void;
+  onPick: (v: number) => void;
   C: ReturnType<typeof useColors>;
 }) {
-  const selectedIdx = selected !== null ? TILE_SCORES.indexOf(selected as any) : -1;
-  const accentColor = selectedIdx >= 0 ? TILE_COLORS[selectedIdx] : C.textDim;
+  const color   = selected !== null ? dotColor(selected) : C.border;
+  const word    = selected !== null ? (VALUE_WORDS[category.key]?.[selected - 1] ?? '') : null;
+  const tint    = selected !== null ? dotColor(selected) + '0D' : C.surface;
+  const emoji   = getDynamicEmoji(category.key, selected);
+  const step    = emojiStep(selected);
 
   return (
-    <View style={[styles.card, { backgroundColor: C.surface, borderColor: C.border }]}>
-      {/* Card header */}
+    <View style={[
+      styles.card,
+      {
+        backgroundColor: tint,
+        // Individual border sides: thick colored left, hairline elsewhere
+        borderTopWidth: StyleSheet.hairlineWidth,    borderTopColor: C.border,
+        borderRightWidth: StyleSheet.hairlineWidth,  borderRightColor: C.border,
+        borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: C.border,
+        borderLeftWidth: 3,                          borderLeftColor: color,
+      },
+    ]}>
+      {/* Header row: meta on left, live value on right */}
       <View style={styles.cardHeader}>
-        <View style={[styles.cardIconWrap, { backgroundColor: C.elevated }]}>
-          <Feather name={category.icon} size={16} color={accentColor} />
-        </View>
-        <View style={{ flex: 1, marginLeft: Spacing.sm }}>
-          <Text style={[styles.cardLabel, { color: C.text }]}>{category.label}</Text>
-          <Text style={[styles.cardQuestion, { color: C.textMuted }]}>{category.question}</Text>
-        </View>
-        {selected !== null && (
-          <View style={[styles.doneChip, { backgroundColor: accentColor + '20', borderColor: accentColor + '40' }]}>
-            <Feather name="check" size={12} color={accentColor} />
-            <Text style={[styles.doneText, { color: accentColor }]}>Done</Text>
+        <View style={styles.cardMeta}>
+          <View style={styles.catLabelRow}>
+            <Feather name={category.icon} size={13} color={selected !== null ? color : C.textDim} />
+            <Text style={[styles.catLabel, { color: C.textMuted }]}>{category.label.toUpperCase()}</Text>
           </View>
-        )}
+          <Text style={[styles.catQuestion, { color: C.text }]}>{category.question}</Text>
+        </View>
+
+        {/* Animated value readout — key change triggers enter animation */}
+        <View style={styles.valueBox}>
+          <Animated.Text
+            key={`n-${category.key}-${selected}-${step}`}
+            entering={FadeInDown.duration(160)}
+            style={[styles.valueNum, { color: selected !== null ? color : C.border }]}
+          >
+            {emoji ? `${emoji} ${selected}` : (selected ?? '—')}
+          </Animated.Text>
+          <Animated.Text
+            key={`w-${category.key}-${selected}`}
+            entering={FadeInDown.duration(180).delay(20)}
+            style={[styles.valueWord, { color: selected !== null ? color : C.textDim }]}
+          >
+            {word?.toUpperCase() ?? 'TAP BELOW'}
+          </Animated.Text>
+        </View>
       </View>
 
-      {/* Vibe tiles */}
-      <View style={styles.tileRow}>
-        {category.tiles.map((tile, i) => {
-          const score = TILE_SCORES[i];
-          return (
-            <VibeTile
-              key={i}
-              emoji={tile.emoji}
-              label={tile.label}
-              color={TILE_COLORS[i]}
-              isSelected={selected === score}
-              onPress={() => onPick(score)}
-              C={C}
-            />
-          );
-        })}
+      {/* 1–10 dot scale */}
+      <DotRating value={selected} onValueChange={onPick} C={C} />
+
+      {/* Scale end-labels */}
+      <View style={styles.scaleRow}>
+        <Text style={[styles.scaleLabel, { color: C.textDim }]}>{category.leftLabel}</Text>
+        <Text style={[styles.scaleLabel, { color: C.textDim }]}>{category.rightLabel}</Text>
       </View>
     </View>
   );
 }
 
-// ── Vibe Tile ────────────────────────────────────────────────────────────────
-function VibeTile({
-  emoji,
-  label,
-  color,
-  isSelected,
-  onPress,
-  C,
+// ── Dot Rating ────────────────────────────────────────────────────────────────
+function DotRating({
+  value, onValueChange, C,
 }: {
-  emoji: string;
-  label: string;
-  color: string;
-  isSelected: boolean;
-  onPress: () => void;
+  value: number | null;
+  onValueChange: (v: number) => void;
   C: ReturnType<typeof useColors>;
 }) {
-  const scale = useSharedValue(1);
-  const bgOpacity = useSharedValue(isSelected ? 1 : 0);
-  const borderOpacity = useSharedValue(isSelected ? 1 : 0);
-
-  useEffect(() => {
-    bgOpacity.value = withTiming(isSelected ? 1 : 0, { duration: 200 });
-    borderOpacity.value = withTiming(isSelected ? 1 : 0, { duration: 200 });
-    scale.value = withSpring(isSelected ? 1.06 : 1, { damping: 16, stiffness: 320, mass: 0.5 });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isSelected]);
-
-  const tileAnim = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const bgAnim = useAnimatedStyle(() => ({
-    opacity: bgOpacity.value,
-  }));
-
   return (
-    <Pressable style={styles.tilePressable} onPress={onPress}>
-      <Animated.View
-        style={[
-          styles.tileInner,
-          {
-            borderColor: isSelected ? color : C.border,
-            backgroundColor: C.elevated,
-          },
-          tileAnim,
-        ]}
-      >
-        {/* Color fill background */}
-        <Animated.View
-          style={[
-            StyleSheet.absoluteFill,
-            { backgroundColor: color + '25', borderRadius: Radius.md },
-            bgAnim,
-          ]}
-        />
-        <Text style={styles.tileEmoji}>{emoji}</Text>
-        <Text
-          style={[
-            styles.tileLabel,
-            { color: isSelected ? color : C.textDim },
-          ]}
-          numberOfLines={1}
-        >
-          {label}
-        </Text>
-      </Animated.View>
-    </Pressable>
+    <View style={styles.dotRow}>
+      {Array.from({ length: 10 }, (_, i) => {
+        const n = i + 1;
+        const filled   = value !== null && n <= value;
+        const isActive = value === n; // The "tip" of the fill
+        const col = dotColor(n);
+        return (
+          <Pressable key={n} onPress={() => onValueChange(n)} hitSlop={8} style={styles.dotWrap}>
+            <View style={[
+              styles.dot,
+              filled
+                ? { backgroundColor: col, transform: [{ scale: isActive ? 1.3 : 1 }] }
+                : { backgroundColor: 'transparent', borderWidth: 1.5, borderColor: C.border },
+            ]} />
+          </Pressable>
+        );
+      })}
+    </View>
   );
 }
 
-// ── Styles ───────────────────────────────────────────────────────────────────
+// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-  },
-  scroll: {
-    paddingHorizontal: Spacing.lg,
-  },
+  root: { flex: 1 },
+  topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 200 },
+  scroll: { paddingHorizontal: Spacing.lg },
 
   // Header
-  screenTitle: {
-    fontSize: 30,
+  title: {
+    fontSize: 38,
     fontWeight: '800',
-    letterSpacing: -0.6,
-    marginBottom: 4,
+    letterSpacing: -1,
+    lineHeight: 44,
+    marginBottom: Spacing.xs,
   },
-  screenSub: {
-    fontSize: 14,
-    lineHeight: 20,
+  subtitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    letterSpacing: 0.2,
     marginBottom: Spacing.lg,
   },
 
-  // Location section
-  locationSection: {
-    marginBottom: Spacing.lg,
-  },
+  // Location
+  locationSection: { marginBottom: Spacing.lg },
   selectedChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: Radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 12,
-    gap: Spacing.sm,
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    borderRadius: Radius.lg, borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: Spacing.md, paddingVertical: 12,
   },
-  selectedIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  selectedName: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  selectedAddr: {
-    fontSize: 12,
-    marginTop: 1,
-  },
-  clearBtn: {
-    padding: 4,
-  },
+  selectedIcon: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  selectedName: { fontSize: 14, fontWeight: '700' },
+  selectedAddr: { fontSize: 12, marginTop: 1 },
   searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    borderRadius: Radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    paddingHorizontal: Spacing.md,
-    height: 48,
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    borderRadius: Radius.lg, borderWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: Spacing.md, height: 48,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 15,
-    padding: 0,
-  },
+  searchInput: { flex: 1, fontSize: 15, padding: 0 },
   resultsBox: {
-    borderRadius: Radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    marginTop: 6,
-    overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 6,
+    borderRadius: Radius.lg, borderWidth: StyleSheet.hairlineWidth,
+    marginTop: 6, overflow: 'hidden',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 6,
   },
-  resultRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 13,
-  },
-  resultName: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  resultAddr: {
-    fontSize: 12,
-    marginTop: 2,
-  },
-  resultDist: {
-    fontSize: 12,
-    fontWeight: '700',
-    marginTop: 2,
-  },
+  resultRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: 13 },
+  resultName: { fontSize: 14, fontWeight: '600' },
+  resultAddr: { fontSize: 12, marginTop: 2 },
+  resultDist: { fontSize: 12, fontWeight: '700', marginTop: 2 },
 
   // Card
-  cardSpacing: {
-    marginBottom: Spacing.md,
-  },
+  cardSpacing: { marginBottom: Spacing.md },
   card: {
     borderRadius: Radius.lg,
-    borderWidth: StyleSheet.hairlineWidth,
     padding: Spacing.md,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
   },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.md,
-  },
-  cardIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: Radius.sm + 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  cardLabel: {
-    fontSize: 15,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-  },
-  cardQuestion: {
-    fontSize: 12,
-    marginTop: 1,
-  },
-  doneChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: Radius.pill,
-    borderWidth: 1,
-  },
-  doneText: {
-    fontSize: 11,
-    fontWeight: '700',
-  },
+  cardHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: Spacing.md },
+  cardMeta: { flex: 1 },
+  catLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 4 },
+  catLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1.2 },
+  catQuestion: { fontSize: 15, fontWeight: '600', letterSpacing: -0.2 },
 
-  // Tiles
-  tileRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  tilePressable: {
-    flex: 1,
-  },
-  tileInner: {
-    borderRadius: Radius.md,
-    borderWidth: 1.5,
-    paddingVertical: 10,
-    paddingHorizontal: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    gap: 5,
-  },
-  tileEmoji: {
-    fontSize: 22,
-    lineHeight: 26,
-  },
-  tileLabel: {
-    fontSize: 9,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.3,
-    textAlign: 'center',
-  },
+  // Value display
+  valueBox: { alignItems: 'flex-end', minWidth: 68 },
+valueNum: { fontSize: 40, fontWeight: '800', letterSpacing: -1, lineHeight: 44 },
+  valueWord: { fontSize: 10, fontWeight: '700', letterSpacing: 0.8, marginTop: 1 },
 
-  // Progress dots
-  progressRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginTop: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  progressDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  progressLabel: {
-    fontSize: 12,
-    fontWeight: '500',
-    marginLeft: 4,
-  },
+  // Dots
+  dotRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing.sm },
+  dotWrap: { alignItems: 'center', justifyContent: 'center', padding: 6 },
+  dot: { width: 18, height: 18, borderRadius: 9 },
 
-  // Floating submit
-  submitWrap: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.sm,
-  },
+  // Scale labels
+  scaleRow: { flexDirection: 'row', justifyContent: 'space-between' },
+  scaleLabel: { fontSize: 11, fontWeight: '500' },
+
+  // Submit
+  submitWrap: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
   submitBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
-    height: 54,
-    borderRadius: Radius.lg,
-    shadowColor: '#3ab98f',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 16,
-    elevation: 10,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
+    height: 54, borderRadius: Radius.lg, backgroundColor: '#3ab98f',
+    shadowColor: '#3ab98f', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 16, elevation: 10,
   },
-  submitText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-    letterSpacing: 0.2,
-  },
+  submitText: { color: '#fff', fontSize: 16, fontWeight: '700', letterSpacing: 0.2 },
 
-  // Success overlay
-  successOverlay: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.sm,
+  // Success
+  successOverlay: { alignItems: 'center', justifyContent: 'center', gap: Spacing.sm, padding: Spacing.xl },
+  successEmoji: { fontSize: 64, marginBottom: Spacing.md },
+  successTitle: { fontSize: 28, fontWeight: '800', letterSpacing: -0.5 },
+  successSub: { fontSize: 15, textAlign: 'center', lineHeight: 22, marginTop: Spacing.sm },
+  badgeCard: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.md,
+    borderRadius: Radius.lg, borderWidth: StyleSheet.hairlineWidth,
+    padding: Spacing.md, width: '100%', marginTop: Spacing.sm,
   },
-  successEmoji: {
-    fontSize: 64,
-    marginBottom: Spacing.md,
-  },
-  successTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.5,
-  },
-  successSub: {
-    fontSize: 15,
-    textAlign: 'center',
-    paddingHorizontal: Spacing.xl,
-    lineHeight: 22,
-  },
+  badgeEmoji: { fontSize: 32 },
+  badgeLabel: { fontSize: 16, fontWeight: '700' },
+  badgeDesc: { fontSize: 13, marginTop: 2 },
 });
