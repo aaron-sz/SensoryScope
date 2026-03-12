@@ -1,114 +1,81 @@
 /**
  * FloatingTabBar
- * A gorgeous floating pill-shaped tab bar with:
- *  - expo-blur glass background
- *  - Animated sliding indicator that follows the active tab
- *  - Icon scale + glow animation on selection
- *  - Haptic feedback on every tap
+ * Clean, modern floating tab bar.
+ * Per-tab animated background pill — no absolute-positioned sliding indicator,
+ * so it works correctly on every device size.
  */
-import { Ionicons } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import React, { useCallback, useEffect } from 'react';
-import { Platform, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Radius, Spacing, useColors } from '../../constants/theme';
 
-/** Route name → icon + label */
-const TAB_CONFIG: Record<string, { icon: keyof typeof Ionicons.glyphMap; label: string }> = {
-  explore: { icon: 'compass', label: 'Explore' },
-  map: { icon: 'map', label: 'Map' },
-  submit: { icon: 'add-circle', label: 'Rate' },
-  profile: { icon: 'person', label: 'Profile' },
+type FeatherName = React.ComponentProps<typeof Feather>['name'];
+
+const TAB_CONFIG: Record<string, { icon: FeatherName; activeIcon: FeatherName; label: string }> = {
+  explore: { icon: 'compass',    activeIcon: 'compass',    label: 'Explore' },
+  map:     { icon: 'map',        activeIcon: 'map',        label: 'Map'     },
+  submit:  { icon: 'plus-circle', activeIcon: 'plus-circle', label: 'Rate'  },
+  profile: { icon: 'user',       activeIcon: 'user',       label: 'Profile' },
 };
 
 const BAR_HEIGHT = 64;
-const INDICATOR_SIZE = 52;
 
 export default function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
   const C = useColors();
-  // Only render routes we have config for (hides explore, modal, etc.)
+  const insets = useSafeAreaInsets();
+
   const visibleRoutes = state.routes.filter((r) => !!TAB_CONFIG[r.name]);
-  const activeVisibleIndex = visibleRoutes.findIndex(
-    (r) => r.key === state.routes[state.index]?.key
+  const activeIdx = visibleRoutes.findIndex(
+    (r) => r.key === state.routes[state.index]?.key,
   );
-
-  const indicatorX = useSharedValue(0);
-
-  // We need the tab width to position the indicator — computed after layout
-  const tabWidth = useSharedValue(0);
-
-  // Animate the indicator to the new active tab.
-  // `tabWidth` is a stable shared-value ref — never put .value in deps,
-  // that reads it during render and triggers Reanimated's strict-mode warning.
-  useEffect(() => {
-    if (tabWidth.value > 0) {
-      indicatorX.value = withSpring(activeVisibleIndex * tabWidth.value, {
-        damping: 22,
-        stiffness: 280,
-        mass: 0.8,
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeVisibleIndex]); // tabWidth / indicatorX are stable refs, not deps
-
-  // Merge position + width into one animated style so we never read
-  // tabWidth.value directly during JSX render.
-  const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: indicatorX.value }],
-    width: tabWidth.value || INDICATOR_SIZE,
-  }));
 
   const handlePress = useCallback(
     (routeName: string, routeKey: string) => {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      const isFocused = state.routes[state.index]?.key === routeKey;
-      if (!isFocused) {
+      if (state.routes[state.index]?.key !== routeKey) {
         navigation.navigate(routeName);
       }
     },
-    [state, navigation]
+    [state, navigation],
   );
 
   return (
-    <View style={styles.outerContainer} pointerEvents="box-none">
-      <View
-        style={[styles.barWrapper, { borderColor: C.border }]}
-        onLayout={(e) => {
-          const w = e.nativeEvent.layout.width / visibleRoutes.length;
-          if (tabWidth.value === 0) {
-            tabWidth.value = w;
-            // Position indicator immediately (no spring on first render)
-            indicatorX.value = activeVisibleIndex * w;
-          }
-        }}
-      >
-        {/* Frosted background — systemMaterial adapts to light/dark mode */}
-        {Platform.OS === 'android' ? (
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: C.elevated, borderRadius: Radius.pill }]} />
+    <View
+      style={[
+        styles.outer,
+        { paddingBottom: Math.max(insets.bottom, Spacing.md) },
+      ]}
+      pointerEvents="box-none"
+    >
+      <View style={[styles.bar, { borderColor: C.border }]}>
+        {Platform.OS === 'ios' ? (
+          <BlurView intensity={80} tint="systemMaterial" style={StyleSheet.absoluteFill} />
         ) : (
-          <BlurView intensity={90} tint="systemMaterial" style={StyleSheet.absoluteFill} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: C.elevated }]} />
         )}
 
-        {/* Sliding active indicator pill — width + position driven by useAnimatedStyle */}
-        <Animated.View style={[styles.indicator, indicatorStyle]} />
-
-        {/* Tab buttons */}
         {visibleRoutes.map((route, index) => {
           const config = TAB_CONFIG[route.name];
-          const isActive = index === activeVisibleIndex;
+          const isActive = index === activeIdx;
           return (
             <TabButton
               key={route.key}
               icon={config.icon}
               label={config.label}
               isActive={isActive}
+              activeColor={C.accent}
+              inactiveColor={C.textDim}
+              highlightColor={C.accentGlow}
               onPress={() => handlePress(route.name, route.key)}
             />
           );
@@ -118,92 +85,115 @@ export default function FloatingTabBar({ state, navigation }: BottomTabBarProps)
   );
 }
 
-/** Individual tab button with animated icon scale and opacity */
+// ── Tab button with self-contained animated background ──────────────────────
 function TabButton({
   icon,
   label,
   isActive,
+  activeColor,
+  inactiveColor,
+  highlightColor,
   onPress,
 }: {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: FeatherName;
   label: string;
   isActive: boolean;
+  activeColor: string;
+  inactiveColor: string;
+  highlightColor: string;
   onPress: () => void;
 }) {
-  const C = useColors();
-  const scale = useSharedValue(1);
-  const opacity = useSharedValue(isActive ? 1 : 0.45);
+  const bgOpacity  = useSharedValue(isActive ? 1 : 0);
+  const iconScale  = useSharedValue(isActive ? 1.08 : 1);
+  const labelOpacity = useSharedValue(isActive ? 1 : 0.5);
 
   useEffect(() => {
-    scale.value = withSpring(isActive ? 1.15 : 1, { damping: 18, stiffness: 300 });
-    opacity.value = withTiming(isActive ? 1 : 0.45, { duration: 200 });
+    bgOpacity.value    = withTiming(isActive ? 1 : 0,   { duration: 200 });
+    iconScale.value    = withSpring(isActive ? 1.08 : 1, { damping: 20, stiffness: 340, mass: 0.6 });
+    labelOpacity.value = withTiming(isActive ? 1 : 0.5, { duration: 200 });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isActive]);
 
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-    opacity: opacity.value,
+  const bgStyle = useAnimatedStyle(() => ({
+    opacity: bgOpacity.value,
+  }));
+
+  const contentStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: iconScale.value }],
+    opacity: labelOpacity.value,
   }));
 
   return (
-    <TouchableOpacity style={styles.tab} onPress={onPress} activeOpacity={0.7}>
-      <Animated.View style={[styles.tabInner, animStyle]}>
-        <Ionicons
-          name={isActive ? icon : (`${icon}-outline` as keyof typeof Ionicons.glyphMap)}
-          size={26}
-          color={isActive ? C.accent : C.textDim}
+    <Pressable style={styles.tab} onPress={onPress} hitSlop={4}>
+      {/* Animated background pill — lives inside the tab, never clips */}
+      <Animated.View
+        style={[
+          styles.highlight,
+          { backgroundColor: highlightColor },
+          bgStyle,
+        ]}
+      />
+
+      <Animated.View style={[styles.tabContent, contentStyle]}>
+        <Feather
+          name={icon}
+          size={22}
+          color={isActive ? activeColor : inactiveColor}
+          strokeWidth={isActive ? 2.2 : 1.8}
         />
+        <Text style={[styles.label, { color: isActive ? activeColor : inactiveColor }]}>
+          {label}
+        </Text>
       </Animated.View>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  outerContainer: {
+  outer: {
     position: 'absolute',
     bottom: 0,
     left: 0,
     right: 0,
     alignItems: 'center',
-    paddingBottom: Spacing.lg,
-    paddingHorizontal: Spacing.xl,
-  },
-  barWrapper: {
+    paddingHorizontal: Spacing.lg,
+    pointerEvents: 'box-none',
+  } as any,
+  bar: {
     flexDirection: 'row',
     height: BAR_HEIGHT,
+    width: '100%',
     borderRadius: Radius.pill,
     overflow: 'hidden',
-    borderWidth: 1,
-    // borderColor set dynamically via C.border in JSX
-    backgroundColor: 'transparent',
+    borderWidth: StyleSheet.hairlineWidth,
     alignItems: 'center',
-    boxShadow: '0 4px 24px rgba(0,0,0,0.14)',
-    width: '100%',
-  },
-  androidBlur: {
-    backgroundColor: 'rgba(255, 255, 255, 0.96)',
-    borderRadius: Radius.pill,
-  },
-  indicator: {
-    position: 'absolute',
-    top: 6,
-    bottom: 6,
-    left: 6,
-    zIndex: 0,
-    backgroundColor: 'rgba(16, 185, 129, 0.14)',
-    borderRadius: Radius.pill,
-    borderCurve: 'continuous',
-    borderWidth: 1,
-    borderColor: 'rgba(4, 120, 87, 0.25)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.1,
+    shadowRadius: 24,
+    elevation: 14,
   },
   tab: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     height: BAR_HEIGHT,
-    zIndex: 1,
   },
-  tabInner: {
+  // Highlight fills the tab cell minus a small inset — always the right size
+  highlight: {
+    ...StyleSheet.absoluteFillObject,
+    marginHorizontal: 6,
+    marginVertical: 6,
+    borderRadius: Radius.pill,
+  },
+  tabContent: {
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 3,
+  },
+  label: {
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
 });
