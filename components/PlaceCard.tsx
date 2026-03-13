@@ -98,7 +98,7 @@ export default function PlaceCard({ place, onPress }: Props) {
                     {/* Rating */}
                     {place.rating != null && (
                         <View style={styles.ratingChip}>
-                            <Ionicons name="star" size={13} color="#F59E0B" />
+                            <Ionicons name="star" size={13} color={C.moderate} />
                             <Text style={[styles.ratingText, { color: C.text }]}>
                                 {place.rating.toFixed(1)}
                             </Text>
@@ -125,8 +125,8 @@ export default function PlaceCard({ place, onPress }: Props) {
                     {/* Open/Closed */}
                     {isOpen != null && (
                         <View style={styles.metaChip}>
-                            <View style={[styles.openDot, { backgroundColor: isOpen ? '#10B981' : '#F43F5E' }]} />
-                            <Text style={[styles.metaText, { color: isOpen ? '#10B981' : '#F43F5E' }]}>
+                            <View style={[styles.openDot, { backgroundColor: isOpen ? C.calm : C.intense }]} />
+                            <Text style={[styles.metaText, { color: isOpen ? C.calm : C.intense }]}>
                                 {isOpen ? 'Open' : 'Closed'}
                             </Text>
                         </View>

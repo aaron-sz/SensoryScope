@@ -11,10 +11,11 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { Colors, Radius, Shadows, Spacing } from '../constants/theme';
+import { Radius, Shadows, Spacing, useColors } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 
 export default function SignupScreen() {
+    const C = useColors();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [username, setUsername] = useState('');
@@ -28,7 +29,7 @@ export default function SignupScreen() {
 
         setLoading(true);
 
-        const { data, error } = await supabase.auth.signUp({
+        const { error } = await supabase.auth.signUp({
             email,
             password,
             options: {
@@ -52,66 +53,71 @@ export default function SignupScreen() {
     return (
         <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.container}
+            style={[styles.container, { backgroundColor: C.bg }]}
         >
-            <View style={styles.card}>
-                <Text style={styles.title}>Create Account</Text>
-                <Text style={styles.subtitle}>Join SensoryScope today</Text>
+            <View style={[styles.card, { backgroundColor: C.surface }]}>
+                <Text style={[styles.title, { color: C.primary }]}>Create Account</Text>
+                <Text style={[styles.subtitle, { color: C.textMuted }]}>Join SensoryScope today</Text>
 
                 <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Username</Text>
+                    <Text style={[styles.label, { color: C.primaryLight }]}>Username</Text>
                     <TextInput
-                        style={styles.input}
+                        style={[styles.input, { backgroundColor: C.bg, borderColor: C.border, color: C.text }]}
                         placeholder="johndoe123"
-                        placeholderTextColor={Colors.textDim}
+                        placeholderTextColor={C.textDim}
                         value={username}
                         onChangeText={setUsername}
                         autoCapitalize="none"
+                        accessibilityLabel="Username"
                     />
                 </View>
 
                 <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Email</Text>
+                    <Text style={[styles.label, { color: C.primaryLight }]}>Email</Text>
                     <TextInput
-                        style={styles.input}
+                        style={[styles.input, { backgroundColor: C.bg, borderColor: C.border, color: C.text }]}
                         placeholder="your@email.com"
-                        placeholderTextColor={Colors.textDim}
+                        placeholderTextColor={C.textDim}
                         value={email}
                         onChangeText={setEmail}
                         autoCapitalize="none"
                         keyboardType="email-address"
+                        accessibilityLabel="Email address"
                     />
                 </View>
 
                 <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Password</Text>
+                    <Text style={[styles.label, { color: C.primaryLight }]}>Password</Text>
                     <TextInput
-                        style={styles.input}
+                        style={[styles.input, { backgroundColor: C.bg, borderColor: C.border, color: C.text }]}
                         placeholder="••••••••"
-                        placeholderTextColor={Colors.textDim}
+                        placeholderTextColor={C.textDim}
                         value={password}
                         onChangeText={setPassword}
                         secureTextEntry
+                        accessibilityLabel="Password"
                     />
                 </View>
 
                 <TouchableOpacity
-                    style={styles.button}
+                    style={[styles.button, { backgroundColor: C.accent, ...Shadows.glow, shadowColor: C.accent }]}
                     onPress={handleSignUp}
                     disabled={loading}
+                    accessibilityRole="button"
+                    accessibilityLabel="Create account"
                 >
                     {loading ? (
-                        <ActivityIndicator color={Colors.bg} />
+                        <ActivityIndicator color="#FFFFFF" />
                     ) : (
                         <Text style={styles.buttonText}>Sign Up</Text>
                     )}
                 </TouchableOpacity>
 
                 <View style={styles.footer}>
-                    <Text style={styles.footerText}>Already have an account? </Text>
+                    <Text style={[styles.footerText, { color: C.textMuted }]}>Already have an account? </Text>
                     <Link href="/login" asChild>
                         <TouchableOpacity>
-                            <Text style={styles.link}>Sign In</Text>
+                            <Text style={[styles.link, { color: C.accent }]}>Sign In</Text>
                         </TouchableOpacity>
                     </Link>
                 </View>
@@ -119,8 +125,10 @@ export default function SignupScreen() {
                 <TouchableOpacity
                     style={styles.guestButton}
                     onPress={() => router.replace('/(tabs)' as any)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Skip and explore as guest"
                 >
-                    <Text style={styles.guestButtonText}>Skip for now — explore as guest</Text>
+                    <Text style={[styles.guestButtonText, { color: C.textMuted }]}>Skip for now — explore as guest</Text>
                 </TouchableOpacity>
             </View>
         </KeyboardAvoidingView>
@@ -130,12 +138,10 @@ export default function SignupScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.bg,
         justifyContent: 'center',
         padding: Spacing.xl,
     },
     card: {
-        backgroundColor: Colors.surface,
         borderRadius: Radius.lg,
         padding: Spacing.xl,
         ...Shadows.card,
@@ -143,12 +149,10 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 28,
         fontWeight: '700',
-        color: Colors.primary,
         marginBottom: Spacing.xs,
     },
     subtitle: {
         fontSize: 16,
-        color: Colors.textMuted,
         marginBottom: Spacing.xl,
     },
     inputContainer: {
@@ -157,28 +161,22 @@ const styles = StyleSheet.create({
     label: {
         fontSize: 14,
         fontWeight: '500',
-        color: Colors.primaryLight,
         marginBottom: Spacing.xs,
     },
     input: {
-        backgroundColor: Colors.bg,
         borderWidth: 1,
-        borderColor: Colors.border,
         borderRadius: Radius.md,
         padding: Spacing.md,
         fontSize: 16,
-        color: Colors.text,
     },
     button: {
-        backgroundColor: Colors.accent,
         borderRadius: Radius.md,
         padding: Spacing.md,
         alignItems: 'center',
         marginTop: Spacing.md,
-        ...Shadows.glow,
     },
     buttonText: {
-        color: Colors.bg,
+        color: '#FFFFFF',
         fontSize: 16,
         fontWeight: '600',
     },
@@ -188,11 +186,9 @@ const styles = StyleSheet.create({
         marginTop: Spacing.xl,
     },
     footerText: {
-        color: Colors.textMuted,
         fontSize: 14,
     },
     link: {
-        color: Colors.accent,
         fontSize: 14,
         fontWeight: '600',
     },
@@ -202,7 +198,6 @@ const styles = StyleSheet.create({
         marginTop: Spacing.sm,
     },
     guestButtonText: {
-        color: Colors.textMuted,
         fontSize: 14,
         textDecorationLine: 'underline',
     },

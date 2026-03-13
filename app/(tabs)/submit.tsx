@@ -56,12 +56,11 @@ function emojiStep(value: number | null): number {
   return Math.min(Math.floor((value - 1) / 2), 4);
 }
 
-/** Color zone for a 1–10 rating value */
-function dotColor(n: number): string {
-  if (n <= 3) return '#3ab98f';
-  if (n <= 6) return '#ce9b43';
-  if (n <= 8) return '#e07040';
-  return '#d74c64';
+/** Color zone for a 1–10 rating value, sourced from the active theme */
+function dotColor(n: number, C: ReturnType<typeof useColors>): string {
+  if (n <= 3) return C.calm;
+  if (n <= 6) return C.moderate;
+  return C.intense;
 }
 
 /** Descriptive word for a value in a given category */
@@ -293,9 +292,11 @@ export default function SubmitScreen() {
           style={[styles.submitWrap, { paddingBottom: Math.max(insets.bottom, Spacing.md) + 72 }]}
         >
           <Pressable
-            style={[styles.submitBtn, { opacity: loading ? 0.7 : 1 }]}
+            style={[styles.submitBtn, { opacity: loading ? 0.7 : 1, backgroundColor: C.calm, shadowColor: C.calm }]}
             onPress={submitReview}
             disabled={loading}
+            accessibilityRole="button"
+            accessibilityLabel="Submit vibe check"
           >
             <Feather name={loading ? 'loader' : 'send'} size={18} color="#fff" />
             <Text style={styles.submitText}>{loading ? 'Submitting…' : 'Submit Vibe'}</Text>
@@ -420,9 +421,9 @@ function CategoryCard({
   onPick: (v: number) => void;
   C: ReturnType<typeof useColors>;
 }) {
-  const color   = selected !== null ? dotColor(selected) : C.border;
+  const color   = selected !== null ? dotColor(selected, C) : C.border;
   const word    = selected !== null ? (VALUE_WORDS[category.key]?.[selected - 1] ?? '') : null;
-  const tint    = selected !== null ? dotColor(selected) + '0D' : C.surface;
+  const tint    = selected !== null ? dotColor(selected, C) + '0D' : C.surface;
   const emoji   = getDynamicEmoji(category.key, selected);
   const step    = emojiStep(selected);
 
@@ -493,9 +494,17 @@ function DotRating({
         const n = i + 1;
         const filled   = value !== null && n <= value;
         const isActive = value === n; // The "tip" of the fill
-        const col = dotColor(n);
+        const col = dotColor(n, C);
         return (
-          <Pressable key={n} onPress={() => onValueChange(n)} hitSlop={8} style={styles.dotWrap}>
+          <Pressable
+            key={n}
+            onPress={() => onValueChange(n)}
+            hitSlop={13}
+            style={styles.dotWrap}
+            accessibilityRole="radio"
+            accessibilityLabel={`Level ${n} of 10`}
+            accessibilityState={{ checked: value === n }}
+          >
             <View style={[
               styles.dot,
               filled
@@ -587,8 +596,8 @@ valueNum: { fontSize: 40, fontWeight: '800', letterSpacing: -1, lineHeight: 44 }
   submitWrap: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
   submitBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
-    height: 54, borderRadius: Radius.lg, backgroundColor: '#3ab98f',
-    shadowColor: '#3ab98f', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 16, elevation: 10,
+    height: 54, borderRadius: Radius.lg,
+    shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 16, elevation: 10,
   },
   submitText: { color: '#fff', fontSize: 16, fontWeight: '700', letterSpacing: 0.2 },
 

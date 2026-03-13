@@ -26,7 +26,7 @@ import {
 } from 'react-native';
 import Animated, { FadeIn, FadeOut, SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Radius, Spacing, useColors } from '../constants/theme';
+import { Radius, Spacing, useColors, useScoreColor } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 import { PlaceData } from './PlaceCard';
 
@@ -138,8 +138,7 @@ export default function PlaceDetailSheet({ place, onClose }: Props) {
         });
     };
 
-    const scoreColor = (val: number) =>
-        val <= 3 ? '#10B981' : val <= 6 ? '#F59E0B' : '#F43F5E';
+    const scoreColor = useScoreColor();
 
     return (
         <Animated.View style={StyleSheet.absoluteFill} entering={FadeIn.duration(150)} exiting={FadeOut.duration(150)} pointerEvents="box-none">
@@ -182,9 +181,9 @@ export default function PlaceDetailSheet({ place, onClose }: Props) {
                         {/* Meta chips */}
                         <View style={styles.metaRow}>
                             {place.rating != null && (
-                                <View style={[styles.chip, { backgroundColor: '#F59E0B22' }]}>
-                                    <Ionicons name="star" size={14} color="#F59E0B" />
-                                    <Text style={[styles.chipText, { color: '#F59E0B' }]}>
+                                <View style={[styles.chip, { backgroundColor: C.moderate + '22' }]}>
+                                    <Ionicons name="star" size={14} color={C.moderate} />
+                                    <Text style={[styles.chipText, { color: C.moderate }]}>
                                         {place.rating.toFixed(1)} ({place.user_ratings_total ?? 0})
                                     </Text>
                                 </View>
@@ -196,8 +195,8 @@ export default function PlaceDetailSheet({ place, onClose }: Props) {
                                 </View>
                             )}
                             {isOpen != null && (
-                                <View style={[styles.chip, { backgroundColor: (isOpen ? '#10B981' : '#F43F5E') + '22' }]}>
-                                    <Text style={[styles.chipText, { color: isOpen ? '#10B981' : '#F43F5E' }]}>
+                                <View style={[styles.chip, { backgroundColor: (isOpen ? C.calm : C.intense) + '22' }]}>
+                                    <Text style={[styles.chipText, { color: isOpen ? C.calm : C.intense }]}>
                                         {isOpen ? '● Open' : '● Closed'}
                                     </Text>
                                 </View>
@@ -255,9 +254,9 @@ export default function PlaceDetailSheet({ place, onClose }: Props) {
                                         disabled={submitting}
                                     >
                                         {submitting ? (
-                                            <ActivityIndicator color="#fff" size="small" />
+                                            <ActivityIndicator color={C.bg} size="small" />
                                         ) : (
-                                            <Text style={styles.submitBtnText}>Submit Review</Text>
+                                            <Text style={[styles.submitBtnText, { color: C.bg }]}>Submit Review</Text>
                                         )}
                                     </TouchableOpacity>
                                 </View>
@@ -340,7 +339,7 @@ function SliderRow({ label, value, onChange }: { label: string; value: number; o
                             },
                         ]}
                     >
-                        <Text style={[styles.numBtnText, { color: n === value ? '#fff' : C.textMuted }]}>{n}</Text>
+                        <Text style={[styles.numBtnText, { color: n === value ? C.bg : C.textMuted }]}>{n}</Text>
                     </TouchableOpacity>
                 ))}
             </View>
@@ -349,8 +348,9 @@ function SliderRow({ label, value, onChange }: { label: string; value: number; o
 }
 
 function MiniScore({ label, val }: { label: string; val: number }) {
+    const C = useColors();
     return (
-        <Text style={styles.miniScore}>
+        <Text style={[styles.miniScore, { color: C.textMuted }]}>
             {label} {val}/10
         </Text>
     );
@@ -393,11 +393,11 @@ const styles = StyleSheet.create({
     numBtnText: { fontSize: 12, fontWeight: '700' },
     commentInput: { borderWidth: 1, borderRadius: Radius.sm, padding: 10, fontSize: 14, minHeight: 60, textAlignVertical: 'top' },
     submitBtn: { alignItems: 'center', paddingVertical: 12, borderRadius: Radius.sm },
-    submitBtnText: { color: '#fff', fontSize: 15, fontWeight: '700' },
+    submitBtnText: { fontSize: 15, fontWeight: '700' },
 
     reviewItem: { borderBottomWidth: 1, paddingVertical: 10, gap: 4 },
     reviewScores: { flexDirection: 'row', gap: 12 },
-    miniScore: { fontSize: 12, fontWeight: '600', color: '#64748B' },
+    miniScore: { fontSize: 12, fontWeight: '600' },
     reviewComment: { fontSize: 13, lineHeight: 18 },
     reviewDate: { fontSize: 11 },
 

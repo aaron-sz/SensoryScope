@@ -27,7 +27,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { Colors, Radius, scoreColor, Shadows, Spacing } from '../constants/theme';
+import { Radius, Shadows, Spacing, useColors, useScoreColor } from '../constants/theme';
 import { usePlaceBusyness, type BusynessLevel } from '../hooks/usePlaceBusyness';
 
 // ── DisplayLocation type ──────────────────────────────────────────────────────
@@ -53,6 +53,8 @@ interface Props {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function LocationModal({ location, onClose }: Props) {
+  const C = useColors();
+
   let overallScore: number | null = null;
   if (location.avg_sound !== null && location.avg_light !== null && location.avg_crowd !== null) {
     overallScore = (location.avg_sound + location.avg_light + location.avg_crowd) / 3;
@@ -105,28 +107,37 @@ export default function LocationModal({ location, onClose }: Props) {
       style={styles.sheet}
     >
       <GestureDetector gesture={panGesture}>
-        <Animated.View style={[styles.sheetInner, sheetStyle]}>
+        <Animated.View style={[styles.sheetInner, sheetStyle, {
+          backgroundColor: C.surface,
+          borderColor: C.border,
+        }]}>
           {/* Drag handle */}
-          <View style={styles.handle} />
+          <View style={[styles.handle, { backgroundColor: C.border }]} />
 
           {/* Header row */}
           <View style={styles.header}>
             <View style={styles.headerText}>
-              <Text style={styles.locationName} numberOfLines={1}>
+              <Text style={[styles.locationName, { color: C.text }]} numberOfLines={1}>
                 {location.name}
               </Text>
-              <Text style={styles.reviewCount}>
+              <Text style={[styles.reviewCount, { color: C.textMuted }]}>
                 {location.review_count ?? 0} sensory rating{location.review_count !== 1 ? 's' : ''}
               </Text>
             </View>
-            <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={12}>
-              <Ionicons name="close" size={20} color={Colors.textMuted} />
+            <Pressable
+              onPress={onClose}
+              style={[styles.closeBtn, { backgroundColor: C.elevated }]}
+              hitSlop={12}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
+              <Ionicons name="close" size={20} color={C.textMuted} />
             </Pressable>
           </View>
 
           {/* Description / address */}
           {!!location.description && (
-            <Text style={styles.description} numberOfLines={2}>
+            <Text style={[styles.description, { color: C.textMuted }]} numberOfLines={2}>
               {location.description}
             </Text>
           )}
@@ -152,9 +163,14 @@ export default function LocationModal({ location, onClose }: Props) {
           )}
 
           {/* Navigate CTA */}
-          <Pressable style={styles.navButton} onPress={handleNavigate}>
-            <Ionicons name="navigate" size={18} color={Colors.bg} />
-            <Text style={styles.navText}>Navigate</Text>
+          <Pressable
+            style={[styles.navButton, { backgroundColor: C.primary }]}
+            onPress={handleNavigate}
+            accessibilityRole="button"
+            accessibilityLabel={`Navigate to ${location.name}`}
+          >
+            <Ionicons name="navigate" size={18} color={C.bg} />
+            <Text style={[styles.navText, { color: C.bg }]}>Navigate</Text>
           </Pressable>
         </Animated.View>
       </GestureDetector>
@@ -164,16 +180,19 @@ export default function LocationModal({ location, onClose }: Props) {
 
 // ── ScoreRing ─────────────────────────────────────────────────────────────────
 function ScoreRing({ score }: { score: number | null }) {
+  const C = useColors();
+  const scoreColor = useScoreColor();
+
   if (score === null) {
     return (
       <View
         style={[
           styles.scoreRing,
-          { borderColor: Colors.border, backgroundColor: Colors.surface, ...Shadows.subtle },
+          { borderColor: C.border, backgroundColor: C.surface, ...Shadows.subtle },
         ]}
       >
-        <Text style={[styles.scoreNumber, { color: Colors.textDim, fontSize: 16 }]}>N/A</Text>
-        <Text style={[styles.scoreLabel, { color: Colors.textMuted }]}>No data</Text>
+        <Text style={[styles.scoreNumber, { color: C.textDim, fontSize: 16 }]}>N/A</Text>
+        <Text style={[styles.scoreLabel, { color: C.textMuted }]}>No data</Text>
       </View>
     );
   }
@@ -182,7 +201,7 @@ function ScoreRing({ score }: { score: number | null }) {
   const label = score <= 3 ? 'Calm' : score <= 6 ? 'Moderate' : 'Intense';
 
   return (
-    <View style={[styles.scoreRing, { borderColor: color, ...Shadows.card, shadowColor: color }]}>
+    <View style={[styles.scoreRing, { borderColor: color, backgroundColor: C.elevated, ...Shadows.card, shadowColor: color }]}>
       <Text style={[styles.scoreNumber, { color }]}>{score.toFixed(1)}</Text>
       <Text style={[styles.scoreLabel, { color }]}>{label}</Text>
     </View>
@@ -199,8 +218,11 @@ function MetricBar({
   value: number | null;
   delay: number;
 }) {
+  const C = useColors();
+  const scoreColor = useScoreColor();
+
   const safeValue = value ?? 0;
-  const color = value === null ? Colors.border : scoreColor(safeValue);
+  const color = value === null ? C.border : scoreColor(safeValue);
   const fill = useSharedValue(0);
 
   useEffect(() => {
@@ -216,12 +238,15 @@ function MetricBar({
   const barStyle = useAnimatedStyle(() => ({ width: `${fill.value}%` as any }));
 
   return (
-    <View style={styles.metricRow}>
-      <Text style={styles.metricLabel}>{label}</Text>
-      <View style={styles.trackBg}>
+    <View
+      style={styles.metricRow}
+      accessibilityLabel={`${label}: ${value === null ? 'No data' : `${safeValue.toFixed(1)} out of 10`}`}
+    >
+      <Text style={[styles.metricLabel, { color: C.textMuted }]}>{label}</Text>
+      <View style={[styles.trackBg, { backgroundColor: C.elevated }]}>
         <Animated.View style={[styles.trackFill, barStyle, { backgroundColor: color }]} />
       </View>
-      <Text style={[styles.metricValue, { color: value === null ? Colors.textDim : color }]}>
+      <Text style={[styles.metricValue, { color: value === null ? C.textDim : color }]}>
         {value === null ? '-' : safeValue.toFixed(1)}
       </Text>
     </View>
@@ -229,18 +254,10 @@ function MetricBar({
 }
 
 // ── BusynessBar ───────────────────────────────────────────────────────────────
-const BUSYNESS_GRADIENT: [string, string, string] = ['#22C55E', '#EAB308', '#EF4444'];
-
 const LEVEL_LABELS: Record<BusynessLevel, string> = {
   quiet: 'Quiet',
   moderate: 'Moderate',
   busy: 'Busy',
-};
-
-const LEVEL_COLORS: Record<BusynessLevel, string> = {
-  quiet: '#22C55E',
-  moderate: '#EAB308',
-  busy: '#EF4444',
 };
 
 interface BusynessBarProps {
@@ -251,6 +268,15 @@ interface BusynessBarProps {
 }
 
 function BusynessBar({ score, level, isOpenNow, loading }: BusynessBarProps) {
+  const C = useColors();
+  // Map busyness levels to theme sensory colors: quiet→calm, moderate→moderate, busy→intense
+  const levelColors: Record<BusynessLevel, string> = {
+    quiet: C.calm,
+    moderate: C.moderate,
+    busy: C.intense,
+  };
+  const gradient: [string, string, string] = [C.calm, C.moderate, C.intense];
+
   const fillWidth = useSharedValue(0);
 
   useEffect(() => {
@@ -263,15 +289,15 @@ function BusynessBar({ score, level, isOpenNow, loading }: BusynessBarProps) {
   if (loading) {
     return (
       <View style={styles.busynessRow}>
-        <Text style={styles.busynessHeading}>Popularity</Text>
-        <ActivityIndicator size="small" color={Colors.textMuted} />
+        <Text style={[styles.busynessHeading, { color: C.textMuted }]}>Popularity</Text>
+        <ActivityIndicator size="small" color={C.textMuted} />
       </View>
     );
   }
 
   if (score === 0) return null;
 
-  const levelColor = LEVEL_COLORS[level];
+  const levelColor = levelColors[level];
   const levelLabel = LEVEL_LABELS[level];
 
   return (
@@ -280,10 +306,10 @@ function BusynessBar({ score, level, isOpenNow, loading }: BusynessBarProps) {
       accessibilityLabel={`Busyness: ${score}% — ${levelLabel}`}
     >
       <View style={styles.busynessRow}>
-        <Text style={styles.busynessHeading}>Popularity</Text>
+        <Text style={[styles.busynessHeading, { color: C.textMuted }]}>Popularity</Text>
         <View style={styles.busynessBadgeRow}>
           {isOpenNow !== null && (
-            <Text style={[styles.openStatus, { color: isOpenNow ? '#22C55E' : '#EF4444' }]}>
+            <Text style={[styles.openStatus, { color: isOpenNow ? C.calm : C.intense }]}>
               {isOpenNow ? 'Open now' : 'Closed'}
             </Text>
           )}
@@ -296,18 +322,21 @@ function BusynessBar({ score, level, isOpenNow, loading }: BusynessBarProps) {
       {/* Gradient track with animated position indicator */}
       <View style={styles.busynessTrackWrapper}>
         <LinearGradient
-          colors={BUSYNESS_GRADIENT}
+          colors={gradient}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 0 }}
           style={styles.busynessTrack}
         />
         {/* Indicator dot */}
-        <Animated.View style={[styles.busynessIndicator, indicatorStyle]} />
+        <Animated.View style={[styles.busynessIndicator, indicatorStyle, {
+          backgroundColor: C.elevated,
+          borderColor: C.text,
+        }]} />
       </View>
 
       <View style={styles.busynessLabels}>
-        <Text style={styles.busynessEndLabel}>Quiet</Text>
-        <Text style={styles.busynessEndLabel}>Busy</Text>
+        <Text style={[styles.busynessEndLabel, { color: C.textMuted }]}>Quiet</Text>
+        <Text style={[styles.busynessEndLabel, { color: C.textMuted }]}>Busy</Text>
       </View>
     </View>
   );
@@ -323,7 +352,6 @@ const styles = StyleSheet.create({
     paddingBottom: 100,
   },
   sheetInner: {
-    backgroundColor: Colors.surface,
     borderTopLeftRadius: Radius.xl,
     borderTopRightRadius: Radius.xl,
     paddingHorizontal: Spacing.lg,
@@ -331,13 +359,11 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderLeftWidth: 1,
     borderRightWidth: 1,
-    borderColor: 'rgba(0,0,0,0.06)',
   },
   handle: {
     width: 40,
     height: 4,
     borderRadius: Radius.pill,
-    backgroundColor: Colors.border,
     alignSelf: 'center',
     marginVertical: Spacing.sm + 2,
   },
@@ -352,19 +378,16 @@ const styles = StyleSheet.create({
   locationName: {
     fontSize: 20,
     fontWeight: '700',
-    color: Colors.text,
     letterSpacing: 0.2,
   },
   reviewCount: {
     fontSize: 12,
-    color: Colors.textMuted,
     marginTop: 2,
   },
   closeBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: Colors.elevated,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: Spacing.sm,
@@ -372,7 +395,6 @@ const styles = StyleSheet.create({
   },
   description: {
     fontSize: 13,
-    color: Colors.textMuted,
     marginBottom: Spacing.md,
     lineHeight: 18,
   },
@@ -392,7 +414,6 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: Colors.elevated,
   },
   scoreNumber: {
     fontSize: 22,
@@ -416,12 +437,10 @@ const styles = StyleSheet.create({
     width: 44,
     fontSize: 11,
     fontWeight: '600',
-    color: Colors.textMuted,
   },
   trackBg: {
     flex: 1,
     height: 6,
-    backgroundColor: Colors.elevated,
     borderRadius: Radius.pill,
     marginHorizontal: Spacing.sm,
     overflow: 'hidden',
@@ -450,7 +469,6 @@ const styles = StyleSheet.create({
   busynessHeading: {
     fontSize: 11,
     fontWeight: '700',
-    color: Colors.textMuted,
     textTransform: 'uppercase',
     letterSpacing: 0.7,
   },
@@ -490,9 +508,7 @@ const styles = StyleSheet.create({
     width: 14,
     height: 14,
     borderRadius: 7,
-    backgroundColor: '#FFFFFF',
     borderWidth: 2,
-    borderColor: '#1E293B',
     marginLeft: -7,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -506,7 +522,6 @@ const styles = StyleSheet.create({
   },
   busynessEndLabel: {
     fontSize: 9,
-    color: Colors.textMuted,
   },
 
   // Navigate button
@@ -515,13 +530,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.sm,
-    backgroundColor: Colors.primary,
     borderRadius: Radius.lg,
     borderCurve: 'continuous',
     paddingVertical: 14,
   },
   navText: {
-    color: Colors.bg,
     fontSize: 15,
     fontWeight: '700',
     letterSpacing: 0.3,

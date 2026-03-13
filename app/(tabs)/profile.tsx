@@ -89,7 +89,7 @@ const g = StyleSheet.create({
 // ── Sensitivity picker ───────────────────────────────────────────────────────
 function SensitivityPicker({ label, value, onChange }: { label: string; value: SensitivityLevel; onChange: (v: SensitivityLevel) => void }) {
   const C = useColors();
-  const colors: Record<SensitivityLevel, string> = { low: '#10B981', med: '#F59E0B', high: '#F43F5E' };
+  const colors: Record<SensitivityLevel, string> = { low: C.calm, med: C.moderate, high: C.intense };
   return (
     <View style={sp.row}>
       <Text style={[sp.label, { color: C.text }]}>{label}</Text>
@@ -178,8 +178,8 @@ export default function ProfileScreen() {
           <Text style={[s.heroName, { color: C.text }]}>Sensory Explorer</Text>
           <Text style={[s.heroEmail, { color: C.textMuted }]} numberOfLines={1}>{session?.user.email}</Text>
         </View>
-        <TouchableOpacity onPress={handleSignOut} hitSlop={12}>
-          <Feather name="log-out" size={20} color="#F43F5E" />
+        <TouchableOpacity onPress={handleSignOut} hitSlop={12} accessibilityRole="button" accessibilityLabel="Sign out">
+          <Feather name="log-out" size={20} color={C.intense} />
         </TouchableOpacity>
       </View>
 
@@ -272,7 +272,7 @@ export default function ProfileScreen() {
       ) : (
         stats.recentReviews.map((rev) => {
           const avg = (rev.sound_rating + rev.light_rating + rev.crowd_rating) / 3;
-          const scoreColor = avg <= 3.5 ? '#3ab98f' : avg <= 6.5 ? '#ce9b43' : '#d74c64';
+          const scoreColor = avg <= 3.5 ? C.calm : avg <= 6.5 ? C.moderate : C.intense;
           return (
             <View key={rev.id} style={[s.reviewCard, { backgroundColor: C.surface, borderColor: C.border }]}>
               <View style={s.reviewHeader}>

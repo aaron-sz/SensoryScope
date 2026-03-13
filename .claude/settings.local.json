@@ -8,7 +8,9 @@
       "Bash(./gradlew.bat app:assembleDebug:*)",
       "Bash(rm:*)",
       "Read(//c/Program Files/Android/Android Studio/jbr/**)",
-      "Read(//c/Program Files/Android/Android Studio/**)"
+      "Read(//c/Program Files/Android/Android Studio/**)",
+      "Bash(find \"C:\\\\Users\\\\AaronDev\\\\OneDrive\\\\Documents\\\\ReadySetApp\\\\SensoryScope\" -type f -name \"*.tsx\" -o -name \"*.ts\" -o -name \"*.json\" | grep -E \"\\\\.\\(tsx|ts|json\\)$\" | head -50)",
+      "Bash(find \"C:\\\\Users\\\\AaronDev\\\\OneDrive\\\\Documents\\\\ReadySetApp\\\\SensoryScope\" -type f -name \"*DesignSystem*\" -o -name \"*design*\" -o -name \"*theme*\" 2>/dev/null | grep -i \"\\\\.ts\\\\|\\\\.tsx\")"
     ]
   }
 }

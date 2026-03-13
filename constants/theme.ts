@@ -74,6 +74,31 @@ export function useColors() {
   return scheme === 'dark' ? DarkColors : LightColors;
 }
 
+/**
+ * Returns a theme-aware function that maps a 1–10 sensory score to its color.
+ * Use this in components instead of the static `scoreColor()` helper.
+ */
+export function useScoreColor() {
+  const C = useColors();
+  return (score: number): string => {
+    if (score <= 3) return C.calm;
+    if (score <= 6) return C.moderate;
+    return C.intense;
+  };
+}
+
+/**
+ * Returns a theme-aware function that maps a 1–10 sensory score to its glow color.
+ */
+export function useScoreGlow() {
+  const C = useColors();
+  return (score: number): string => {
+    if (score <= 3) return C.calmGlow;
+    if (score <= 6) return C.moderateGlow;
+    return C.intenseGlow;
+  };
+}
+
 export const Spacing = {
   xs: 4,
   sm: 8,
@@ -133,9 +158,11 @@ export const Shadows = {
     shadowOpacity: 0.04,
     shadowRadius: 12,
   },
+  // NOTE: Override `shadowColor` at the call site with `C.accent` for a branded glow.
+  // e.g. { ...Shadows.glow, shadowColor: C.accent }
   glow: {
     elevation: 8,
-    shadowColor: Colors.accent,
+    shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 16,

@@ -11,10 +11,11 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-import { Colors, Radius, Shadows, Spacing } from '../constants/theme';
+import { Radius, Shadows, Spacing, useColors } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 
 export default function LoginScreen() {
+    const C = useColors();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -41,61 +42,67 @@ export default function LoginScreen() {
     return (
         <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={styles.container}
+            style={[styles.container, { backgroundColor: C.bg }]}
         >
-            <View style={styles.card}>
-                <Text style={styles.title}>Welcome Back</Text>
-                <Text style={styles.subtitle}>Sign in to continue to SensoryScope</Text>
+            <View style={[styles.card, { backgroundColor: C.surface }]}>
+                <Text style={[styles.title, { color: C.primary }]}>Welcome Back</Text>
+                <Text style={[styles.subtitle, { color: C.textMuted }]}>Sign in to continue to SensoryScope</Text>
 
                 <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Email</Text>
+                    <Text style={[styles.label, { color: C.primaryLight }]}>Email</Text>
                     <TextInput
-                        style={styles.input}
+                        style={[styles.input, { backgroundColor: C.bg, borderColor: C.border, color: C.text }]}
                         placeholder="your@email.com"
-                        placeholderTextColor={Colors.textDim}
+                        placeholderTextColor={C.textDim}
                         value={email}
                         onChangeText={setEmail}
                         autoCapitalize="none"
                         keyboardType="email-address"
+                        accessibilityLabel="Email address"
                     />
                 </View>
 
                 <View style={styles.inputContainer}>
-                    <Text style={styles.label}>Password</Text>
+                    <Text style={[styles.label, { color: C.primaryLight }]}>Password</Text>
                     <TextInput
-                        style={styles.input}
+                        style={[styles.input, { backgroundColor: C.bg, borderColor: C.border, color: C.text }]}
                         placeholder="••••••••"
-                        placeholderTextColor={Colors.textDim}
+                        placeholderTextColor={C.textDim}
                         value={password}
                         onChangeText={setPassword}
                         secureTextEntry
+                        accessibilityLabel="Password"
                     />
                 </View>
 
                 <TouchableOpacity
-                    style={styles.button}
+                    style={[styles.button, { backgroundColor: C.accent, ...Shadows.glow, shadowColor: C.accent }]}
                     onPress={handleLogin}
                     disabled={loading}
+                    accessibilityRole="button"
+                    accessibilityLabel="Sign in"
                 >
                     {loading ? (
-                        <ActivityIndicator color={Colors.bg} />
+                        <ActivityIndicator color="#FFFFFF" />
                     ) : (
                         <Text style={styles.buttonText}>Sign In</Text>
                     )}
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                    style={styles.guestButton}
+                    style={[styles.guestButton, { borderColor: C.border }]}
                     onPress={() => router.replace('/(tabs)' as any)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Continue as guest"
                 >
-                    <Text style={styles.guestButtonText}>Continue as Guest</Text>
+                    <Text style={[styles.guestButtonText, { color: C.textMuted }]}>Continue as Guest</Text>
                 </TouchableOpacity>
 
                 <View style={styles.footer}>
-                    <Text style={styles.footerText}>Don't have an account? </Text>
+                    <Text style={[styles.footerText, { color: C.textMuted }]}>Don't have an account? </Text>
                     <Link href="/signup" asChild>
                         <TouchableOpacity>
-                            <Text style={styles.link}>Sign Up</Text>
+                            <Text style={[styles.link, { color: C.accent }]}>Sign Up</Text>
                         </TouchableOpacity>
                     </Link>
                 </View>
@@ -107,12 +114,10 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: Colors.bg,
         justifyContent: 'center',
         padding: Spacing.xl,
     },
     card: {
-        backgroundColor: Colors.surface,
         borderRadius: Radius.lg,
         padding: Spacing.xl,
         ...Shadows.card,
@@ -120,12 +125,10 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 28,
         fontWeight: '700',
-        color: Colors.primary,
         marginBottom: Spacing.xs,
     },
     subtitle: {
         fontSize: 16,
-        color: Colors.textMuted,
         marginBottom: Spacing.xl,
     },
     inputContainer: {
@@ -134,28 +137,22 @@ const styles = StyleSheet.create({
     label: {
         fontSize: 14,
         fontWeight: '500',
-        color: Colors.primaryLight,
         marginBottom: Spacing.xs,
     },
     input: {
-        backgroundColor: Colors.bg,
         borderWidth: 1,
-        borderColor: Colors.border,
         borderRadius: Radius.md,
         padding: Spacing.md,
         fontSize: 16,
-        color: Colors.text,
     },
     button: {
-        backgroundColor: Colors.accent,
         borderRadius: Radius.md,
         padding: Spacing.md,
         alignItems: 'center',
         marginTop: Spacing.md,
-        ...Shadows.glow,
     },
     buttonText: {
-        color: Colors.bg,
+        color: '#FFFFFF',
         fontSize: 16,
         fontWeight: '600',
     },
@@ -165,10 +162,8 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginTop: Spacing.sm,
         borderWidth: 1,
-        borderColor: Colors.border,
     },
     guestButtonText: {
-        color: Colors.textMuted,
         fontSize: 15,
         fontWeight: '500',
     },
@@ -178,11 +173,9 @@ const styles = StyleSheet.create({
         marginTop: Spacing.xl,
     },
     footerText: {
-        color: Colors.textMuted,
         fontSize: 14,
     },
     link: {
-        color: Colors.accent,
         fontSize: 14,
         fontWeight: '600',
     },
