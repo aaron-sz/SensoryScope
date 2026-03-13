@@ -11,7 +11,7 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Dimensions,
@@ -101,6 +101,8 @@ export default function ExploreScreen() {
   const searchRef = useRef<TextInput>(null);
 
   const listRef = useRef<FlatList>(null);
+  // Abort controller for in-flight search requests — prevents stale results
+  const searchAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     initLocation();
@@ -119,15 +121,19 @@ export default function ExploreScreen() {
     return () => clearTimeout(t);
   }, [searchQuery]);
 
-  const fetchSearchResults = async (text: string) => {
+  const fetchSearchResults = useCallback(async (text: string) => {
     const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
     if (!API_KEY) return;
+    // Cancel any previous in-flight request
+    searchAbortRef.current?.abort();
+    searchAbortRef.current = new AbortController();
+    const { signal } = searchAbortRef.current;
     try {
       let url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(text)}&key=${API_KEY}`;
       if (userLat != null && userLng != null) {
         url += `&location=${userLat},${userLng}&radius=30000`;
       }
-      const res = await fetch(url);
+      const res = await fetch(url, { signal });
       const json = await res.json();
       if (json.results) {
         const enriched: PlaceData[] = json.results.map((p: any) => ({
@@ -136,19 +142,20 @@ export default function ExploreScreen() {
             ? distanceMiles(userLat, userLng, p.geometry.location.lat, p.geometry.location.lng)
             : undefined,
         }));
-        // Sort by distance
         enriched.sort((a, b) => (a.distance_mi ?? Infinity) - (b.distance_mi ?? Infinity));
         setSearchResults(enriched);
       }
-    } catch (e) { console.warn('Search error:', e); }
-  };
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') console.warn('Search error:', e);
+    }
+  }, [userLat, userLng]);
 
-  const closeSearch = () => {
+  const closeSearch = useCallback(() => {
     setSearchOpen(false);
     setSearchQuery('');
     setSearchResults([]);
     Keyboard.dismiss();
-  };
+  }, []);
 
   const initLocation = async () => {
     try {
@@ -160,7 +167,8 @@ export default function ExploreScreen() {
       }
 
       const loc = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.BestForNavigation,
+        // Balanced gives a ~1-2s fix vs 5-10s for BestForNavigation — fast enough for a directory
+        accuracy: Location.Accuracy.Balanced,
       });
       setUserLat(loc.coords.latitude);
       setUserLng(loc.coords.longitude);
@@ -233,34 +241,42 @@ export default function ExploreScreen() {
     }
   };
 
-  const onRefresh = () => {
+
+  const toggleCategory = useCallback((key: string) => {
+    setActiveCategories((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        if (next.size > 1) next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, []);
+
+  const onRefresh = useCallback(() => {
     setRefreshing(true);
     initLocation();
-  };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const toggleCategory = (key: string) => {
-    const next = new Set(activeCategories);
-    if (next.has(key)) {
-      if (next.size > 1) next.delete(key);
-    } else {
-      next.add(key);
-    }
-    setActiveCategories(next);
-    listRef.current?.scrollToOffset({ offset: 0, animated: true });
-  };
-
-  const sortedPlaces = [...places].sort((a, b) => {
-    if (sortMode === 'distance') {
-      return (a.distance_mi ?? Infinity) - (b.distance_mi ?? Infinity);
-    }
-    return (b.rating ?? 0) - (a.rating ?? 0);
-  });
-
-  const uniquePlaces = Array.from(new Map(sortedPlaces.map(p => [p.place_id, p])).values());
+  // Memoized sort + dedup — avoids O(n log n) sort on every render
+  const sortedUniquePlaces = useMemo(() => {
+    const sorted = [...places].sort((a, b) => {
+      if (sortMode === 'distance') {
+        return (a.distance_mi ?? Infinity) - (b.distance_mi ?? Infinity);
+      }
+      return (b.rating ?? 0) - (a.rating ?? 0);
+    });
+    return Array.from(new Map(sorted.map(p => [p.place_id, p])).values());
+  }, [places, sortMode]);
 
   // What to show: search results or directory results
   const isSearching = searchOpen && searchQuery.trim().length > 0;
-  const displayData = isSearching ? searchResults : uniquePlaces;
+  const displayData = useMemo(
+    () => isSearching ? searchResults : sortedUniquePlaces,
+    [isSearching, searchResults, sortedUniquePlaces],
+  );
 
   const renderPlaceCard = useCallback(
     ({ item }: { item: PlaceData }) => (
@@ -404,6 +420,12 @@ export default function ExploreScreen() {
           contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 100 }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
+          // ── Performance ──────────────────────────────────────────────────
+          removeClippedSubviews={true}   // Unmount off-screen items from native view tree
+          initialNumToRender={8}         // Render first 8 items synchronously on mount
+          maxToRenderPerBatch={5}        // Render up to 5 items per JS frame
+          windowSize={5}                 // Keep 5 screen-heights of items mounted (2.5 above, 2.5 below)
+          // ─────────────────────────────────────────────────────────────────
           refreshControl={
             !isSearching ? (
               <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={C.accent} />

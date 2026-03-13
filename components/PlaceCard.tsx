@@ -54,7 +54,7 @@ function getCategoryLabel(types?: string[]): string {
     return '';
 }
 
-export default function PlaceCard({ place, onPress }: Props) {
+function PlaceCard({ place, onPress }: Props) {
     const C = useColors();
     const photoRef = place.photos?.[0]?.photo_reference;
     const category = getCategoryLabel(place.types);
@@ -138,6 +138,9 @@ export default function PlaceCard({ place, onPress }: Props) {
         </TouchableOpacity>
     );
 }
+
+// memo: prevents re-render when parent scrolls or unrelated state changes
+export default React.memo(PlaceCard);
 
 const styles = StyleSheet.create({
     card: {

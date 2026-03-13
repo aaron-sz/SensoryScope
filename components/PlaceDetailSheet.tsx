@@ -9,7 +9,7 @@
  *  - Google Maps + Apple Maps deep links
  */
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -66,9 +66,9 @@ export default function PlaceDetailSheet({ place, onClose }: Props) {
         fetchReviews();
     }, [place.place_id]);
 
-    const fetchReviews = async () => {
+    const fetchReviews = useCallback(async () => {
         setLoadingReviews(true);
-        const { data, error } = await supabase
+        const { data } = await supabase
             .from('place_reviews')
             .select('*')
             .eq('place_id', place.place_id)
@@ -76,7 +76,7 @@ export default function PlaceDetailSheet({ place, onClose }: Props) {
 
         if (data) setReviews(data);
         setLoadingReviews(false);
-    };
+    }, [place.place_id]);
 
     // Calculate averages from reviews
     const avgNoise = reviews.length > 0 ? reviews.reduce((s, r) => s + r.sound_rating, 0) / reviews.length : null;
@@ -145,8 +145,8 @@ export default function PlaceDetailSheet({ place, onClose }: Props) {
             <TouchableOpacity activeOpacity={1} onPress={onClose} style={styles.backdrop} />
 
             <Animated.View
-                entering={SlideInDown.springify().damping(20).stiffness(150)}
-                exiting={SlideOutDown.duration(200)}
+                entering={SlideInDown.springify().damping(28).stiffness(260).mass(0.7)}
+                exiting={SlideOutDown.duration(140)}
                 style={[styles.sheet, { backgroundColor: C.elevated, paddingBottom: insets.bottom + 20 }]}
             >
                 <View style={[styles.handle, { backgroundColor: C.border }]} />

@@ -138,9 +138,16 @@ export default function SubmitScreen() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<PlaceResult[]>([]);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
 
   const allPicked = CATEGORIES.every((c) => picks[c.key] !== null);
   const ratedCount = CATEGORIES.filter((c) => picks[c.key] !== null).length;
+
+  // Stable handler — prevents CategoryCard from re-rendering when sibling categories change
+  const handlePick = useCallback((key: CategoryKey, v: number) => {
+    setPicks((p) => ({ ...p, [key]: v }));
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
 
   useEffect(() => {
     if (!session?.user.id) return;
@@ -166,10 +173,14 @@ export default function SubmitScreen() {
   const searchPlaces = useCallback(async (query: string) => {
     const KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY;
     if (!KEY || !query.trim()) { setSearchResults([]); return; }
+    // Cancel any previous in-flight request to prevent stale results from overwriting fresh ones
+    searchAbortRef.current?.abort();
+    searchAbortRef.current = new AbortController();
+    const { signal } = searchAbortRef.current;
     try {
       let url = `https://maps.googleapis.com/maps/api/place/textsearch/json?query=${encodeURIComponent(query)}&key=${KEY}`;
       if (userLat != null && userLng != null) url += `&location=${userLat},${userLng}&radius=30000`;
-      const json = await (await fetch(url)).json();
+      const json = await (await fetch(url, { signal })).json();
       if (json.results) {
         const enriched: PlaceResult[] = json.results.map((p: any) => ({
           place_id: p.place_id, name: p.name, formatted_address: p.formatted_address,
@@ -180,7 +191,9 @@ export default function SubmitScreen() {
         enriched.sort((a, b) => (a.distance_mi ?? Infinity) - (b.distance_mi ?? Infinity));
         setSearchResults(enriched.slice(0, 8));
       }
-    } catch { /* silent */ }
+    } catch (e: any) {
+      if (e?.name !== 'AbortError') { /* silent */ }
+    }
   }, [userLat, userLng]);
 
   useEffect(() => {
@@ -274,10 +287,7 @@ export default function SubmitScreen() {
             <CategoryCard
               category={cat}
               selected={picks[cat.key]}
-              onPick={(v) => {
-                setPicks((p) => ({ ...p, [cat.key]: v }));
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              }}
+              onPick={handlePick}
               C={C}
             />
           </Animated.View>
@@ -413,12 +423,13 @@ function LocationPicker({
 }
 
 // ── Category Card ─────────────────────────────────────────────────────────────
-function CategoryCard({
+// memo: only the card whose value changed re-renders; the other two stay frozen
+const CategoryCard = React.memo(function CategoryCard({
   category, selected, onPick, C,
 }: {
   category: (typeof CATEGORIES)[number];
   selected: number | null;
-  onPick: (v: number) => void;
+  onPick: (key: CategoryKey, v: number) => void;
   C: ReturnType<typeof useColors>;
 }) {
   const color   = selected !== null ? dotColor(selected, C) : C.border;
@@ -469,7 +480,7 @@ function CategoryCard({
       </View>
 
       {/* 1–10 dot scale */}
-      <DotRating value={selected} onValueChange={onPick} C={C} />
+      <DotRating value={selected} categoryKey={category.key} onValueChange={onPick} C={C} />
 
       {/* Scale end-labels */}
       <View style={styles.scaleRow}>
@@ -478,14 +489,15 @@ function CategoryCard({
       </View>
     </View>
   );
-}
+});
 
 // ── Dot Rating ────────────────────────────────────────────────────────────────
 function DotRating({
-  value, onValueChange, C,
+  value, categoryKey, onValueChange, C,
 }: {
   value: number | null;
-  onValueChange: (v: number) => void;
+  categoryKey: CategoryKey;
+  onValueChange: (key: CategoryKey, v: number) => void;
   C: ReturnType<typeof useColors>;
 }) {
   return (
@@ -498,7 +510,7 @@ function DotRating({
         return (
           <Pressable
             key={n}
-            onPress={() => onValueChange(n)}
+            onPress={() => onValueChange(categoryKey, n)}
             hitSlop={13}
             style={styles.dotWrap}
             accessibilityRole="radio"
