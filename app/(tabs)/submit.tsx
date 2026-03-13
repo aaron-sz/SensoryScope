@@ -18,6 +18,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import Animated, {
   FadeIn,
@@ -125,6 +126,9 @@ export default function SubmitScreen() {
   const { session } = useAuth();
   const C = useColors();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 600;
+  const hPad = isTablet ? Math.max(Spacing.lg, (width - 640) / 2) : Spacing.lg;
 
   const [picks, setPicks] = useState<Picks>({ sound: null, light: null, crowd: null });
   const [loading, setLoading] = useState(false);
@@ -212,8 +216,9 @@ export default function SubmitScreen() {
   };
 
   const submitReview = async () => {
-    if (!session) { Alert.alert('Sign in required', 'Head to the Profile tab to sign in.'); return; }
-    if (!selectedPlace) { Alert.alert('Select a location', 'Search and choose a place first.'); return; }
+    if (loading) return; // guard against rapid double-tap
+    if (!session) { Alert.alert('Sign In Required', 'Head to the Profile tab to sign in first.'); return; }
+    if (!selectedPlace) { Alert.alert('Where are you?', 'Search for and select a place before submitting.'); return; }
     setLoading(true);
     const { error } = await supabase.from('place_reviews').insert({
       place_id: selectedPlace.place_id,
@@ -225,7 +230,7 @@ export default function SubmitScreen() {
       comment: '',
     });
     setLoading(false);
-    if (error) { Alert.alert('Submission failed', error.message); return; }
+    if (error) { Alert.alert('Submission Failed', 'Your vibe couldn\'t be saved. Please check your connection and try again.'); return; }
 
     const prevCount = prevCountRef.current;
     const newCount = prevCount + 1;
@@ -252,7 +257,7 @@ export default function SubmitScreen() {
       />
 
       <ScrollView
-        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + Spacing.lg, paddingBottom: 160 }]}
+        contentContainerStyle={[styles.scroll, { paddingTop: insets.top + Spacing.lg, paddingBottom: 160, paddingHorizontal: hPad }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
@@ -299,7 +304,7 @@ export default function SubmitScreen() {
         <Animated.View
           entering={FadeInUp.springify().damping(22).stiffness(300)}
           exiting={FadeOut.duration(180)}
-          style={[styles.submitWrap, { paddingBottom: Math.max(insets.bottom, Spacing.md) + 72 }]}
+          style={[styles.submitWrap, { paddingBottom: Math.max(insets.bottom, Spacing.md) + 72, paddingHorizontal: hPad }]}
         >
           <Pressable
             style={[styles.submitBtn, { opacity: loading ? 0.7 : 1, backgroundColor: C.calm, shadowColor: C.calm }]}
@@ -534,7 +539,7 @@ function DotRating({
 const styles = StyleSheet.create({
   root: { flex: 1 },
   topGradient: { position: 'absolute', top: 0, left: 0, right: 0, height: 200 },
-  scroll: { paddingHorizontal: Spacing.lg },
+  scroll: {},
 
   // Header
   title: {
@@ -605,7 +610,7 @@ valueNum: { fontSize: 40, fontWeight: '800', letterSpacing: -1, lineHeight: 44 }
   scaleLabel: { fontSize: 11, fontWeight: '500' },
 
   // Submit
-  submitWrap: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
+  submitWrap: { position: 'absolute', bottom: 0, left: 0, right: 0, paddingTop: Spacing.sm },
   submitBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.sm,
     height: 54, borderRadius: Radius.lg,

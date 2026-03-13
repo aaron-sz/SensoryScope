@@ -25,6 +25,7 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import PlaceCard, { PlaceData } from '../../components/PlaceCard';
@@ -78,6 +79,8 @@ function distanceMiles(lat1: number, lon1: number, lat2: number, lon2: number): 
 export default function ExploreScreen() {
   const C = useColors();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
+  const hPad = width >= 600 ? Math.max(Spacing.md, (width - 720) / 2) : Spacing.md;
 
   const [userLat, setUserLat] = useState<number | null>(null);
   const [userLng, setUserLng] = useState<number | null>(null);
@@ -288,7 +291,7 @@ export default function ExploreScreen() {
   return (
     <View style={[styles.container, { backgroundColor: C.bg }]}>
       {/* ── Header ── */}
-      <View style={[styles.header, { paddingTop: insets.top + 8, backgroundColor: C.bg }]}>
+      <View style={[styles.header, { paddingTop: insets.top + 8, paddingHorizontal: hPad, backgroundColor: C.bg }]}>
         <Text style={[styles.title, { color: C.text }]}>Explore</Text>
         <Text style={[styles.subtitle, { color: C.textMuted }]}>
           Discover sensory-friendly places near you
@@ -417,7 +420,7 @@ export default function ExploreScreen() {
           data={displayData}
           renderItem={renderPlaceCard}
           keyExtractor={(item) => item.place_id}
-          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 100 }]}
+          contentContainerStyle={[styles.list, { paddingBottom: insets.bottom + 100, paddingHorizontal: hPad }]}
           showsVerticalScrollIndicator={false}
           keyboardShouldPersistTaps="handled"
           // ── Performance ──────────────────────────────────────────────────
@@ -456,7 +459,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
-    paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.xs,
     gap: 2,
     zIndex: 5,
@@ -505,7 +507,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   list: {
-    paddingHorizontal: Spacing.md,
     paddingTop: Spacing.xs,
   },
   center: {

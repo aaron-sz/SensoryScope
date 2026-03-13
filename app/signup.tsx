@@ -9,41 +9,75 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
+    useWindowDimensions,
 } from 'react-native';
 import { Radius, Shadows, Spacing, useColors } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 
 export default function SignupScreen() {
     const C = useColors();
+    const { width } = useWindowDimensions();
+    const isTablet = width >= 600;
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [username, setUsername] = useState('');
     const [loading, setLoading] = useState(false);
 
     const handleSignUp = async () => {
-        if (!email || !password || !username) {
-            Alert.alert('Error', 'Please fill in all fields.');
+        const trimmedEmail = email.trim();
+        const trimmedUsername = username.trim();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!trimmedEmail || !password || !trimmedUsername) {
+            Alert.alert('Missing Info', 'Please fill in all fields.');
+            return;
+        }
+        if (!emailRegex.test(trimmedEmail)) {
+            Alert.alert('Invalid Email', 'Please enter a valid email address.');
+            return;
+        }
+        if (trimmedUsername.length < 3) {
+            Alert.alert('Username Too Short', 'Username must be at least 3 characters.');
+            return;
+        }
+        if (trimmedUsername.length > 30) {
+            Alert.alert('Username Too Long', 'Username must be 30 characters or fewer.');
+            return;
+        }
+        if (password.length < 6) {
+            Alert.alert('Password Too Short', 'Password must be at least 6 characters.');
             return;
         }
 
         setLoading(true);
 
         const { error } = await supabase.auth.signUp({
-            email,
+            email: trimmedEmail,
             password,
             options: {
                 data: {
-                    username: username,
+                    username: trimmedUsername,
                 }
             }
         });
 
         if (error) {
-            Alert.alert('Sign Up Error', error.message);
+            const msg = error.message.toLowerCase();
+            if (msg.includes('already registered') || msg.includes('already exists') || msg.includes('email address is already')) {
+                Alert.alert('Account Exists', 'An account with this email already exists. Try signing in instead.');
+            } else if (msg.includes('password') && msg.includes('characters')) {
+                Alert.alert('Password Too Short', 'Password must be at least 6 characters.');
+            } else if (msg.includes('invalid') && msg.includes('email')) {
+                Alert.alert('Invalid Email', 'Please enter a valid email address.');
+            } else if (msg.includes('too many requests') || msg.includes('rate limit')) {
+                Alert.alert('Too Many Attempts', 'Please wait a moment before trying again.');
+            } else {
+                Alert.alert('Sign Up Failed', 'Something went wrong. Please try again.');
+            }
         } else {
             // Note: Profile creation is handled automatically by the Supabase database trigger
-            Alert.alert('Success', 'Account created! Check your email if verification is required.');
+            Alert.alert('Account Created!', 'Welcome to SensoryScope. Check your email if verification is required.');
             router.replace('/(tabs)' as any);
         }
 
@@ -55,7 +89,7 @@ export default function SignupScreen() {
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={[styles.container, { backgroundColor: C.bg }]}
         >
-            <View style={[styles.card, { backgroundColor: C.surface }]}>
+            <View style={[styles.card, { backgroundColor: C.surface }, isTablet && styles.cardTablet]}>
                 <Text style={[styles.title, { color: C.primary }]}>Create Account</Text>
                 <Text style={[styles.subtitle, { color: C.textMuted }]}>Join SensoryScope today</Text>
 
@@ -145,6 +179,11 @@ const styles = StyleSheet.create({
         borderRadius: Radius.lg,
         padding: Spacing.xl,
         ...Shadows.card,
+    },
+    cardTablet: {
+        maxWidth: 460,
+        alignSelf: 'center',
+        width: '100%',
     },
     title: {
         fontSize: 28,

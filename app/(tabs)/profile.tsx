@@ -17,6 +17,7 @@ import {
   TouchableOpacity,
   View,
   useColorScheme,
+  useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { BADGE_DEFS } from '../../constants/badges';
@@ -30,13 +31,13 @@ type SensitivityLevel = 'low' | 'med' | 'high';
 type SensoryPrefs = { noise: SensitivityLevel; light: SensitivityLevel; crowds: SensitivityLevel };
 
 // ── Guest promo ──────────────────────────────────────────────────────────────
-function GuestPromoCard() {
+function GuestPromoCard({ hPad }: { hPad: number }) {
   const C = useColors();
   const router = useRouter();
   return (
     <ScrollView
       style={{ flex: 1 }}
-      contentContainerStyle={{ padding: Spacing.lg, gap: Spacing.md }}
+      contentContainerStyle={{ paddingHorizontal: hPad, paddingVertical: Spacing.lg, gap: Spacing.md }}
       showsVerticalScrollIndicator={false}
     >
       <View style={[g.hero, { backgroundColor: C.elevated, borderColor: C.border }]}>
@@ -127,6 +128,8 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const systemScheme = useColorScheme();
+  const { width } = useWindowDimensions();
+  const hPad = width >= 600 ? Math.max(Spacing.lg, (width - 640) / 2) : Spacing.lg;
 
   const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>('system');
   const [prefs, setPrefs] = useState<SensoryPrefs>({ noise: 'med', light: 'med', crowds: 'med' });
@@ -135,9 +138,16 @@ export default function ProfileScreen() {
 
   const isDark = appearanceMode === 'dark' || (appearanceMode === 'system' && systemScheme === 'dark');
 
+  // Derive a display name from user metadata, falling back to the email prefix
+  const displayName =
+    session?.user.user_metadata?.username ||
+    session?.user.user_metadata?.name ||
+    session?.user.email?.split('@')[0] ||
+    'Explorer';
+
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
-    if (error) Alert.alert('Error signing out', error.message);
+    if (error) Alert.alert('Sign Out Failed', 'Something went wrong. Please try again.');
     else router.replace('/login' as any);
   };
 
@@ -150,8 +160,8 @@ export default function ProfileScreen() {
   if (isGuest) {
     return (
       <View style={{ flex: 1, backgroundColor: C.bg, paddingTop: insets.top + 16, paddingBottom: insets.bottom + 80 }}>
-        <Text style={[s.pageTitle, { color: C.text, paddingHorizontal: Spacing.lg, marginBottom: Spacing.lg }]}>Profile</Text>
-        <GuestPromoCard />
+        <Text style={[s.pageTitle, { color: C.text, paddingHorizontal: hPad, marginBottom: Spacing.lg }]}>Profile</Text>
+        <GuestPromoCard hPad={hPad} />
       </View>
     );
   }
@@ -166,7 +176,7 @@ export default function ProfileScreen() {
   return (
     <ScrollView
       style={{ flex: 1, backgroundColor: C.bg }}
-      contentContainerStyle={[s.scroll, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 100 }]}
+      contentContainerStyle={[s.scroll, { paddingTop: insets.top + 16, paddingBottom: insets.bottom + 100, paddingHorizontal: hPad }]}
       showsVerticalScrollIndicator={false}
     >
       {/* ── Hero card ── */}
@@ -175,7 +185,7 @@ export default function ProfileScreen() {
           <Text style={{ fontSize: 26 }}>🧭</Text>
         </View>
         <View style={{ flex: 1 }}>
-          <Text style={[s.heroName, { color: C.text }]}>Sensory Explorer</Text>
+          <Text style={[s.heroName, { color: C.text }]} numberOfLines={1}>{displayName}</Text>
           <Text style={[s.heroEmail, { color: C.textMuted }]} numberOfLines={1}>{session?.user.email}</Text>
         </View>
         <TouchableOpacity onPress={handleSignOut} hitSlop={12} accessibilityRole="button" accessibilityLabel="Sign out">
@@ -189,10 +199,9 @@ export default function ProfileScreen() {
           { value: String(stats.reviewCount), label: 'Reviews' },
           { value: avgScore,                  label: 'Avg Score' },
           { value: String(stats.earnedBadges.length), label: 'Badges' },
-          { value: isDark ? '🌙' : '☀️',     label: 'Mode' },
         ].map(({ value, label }) => (
           <View key={label} style={[s.statBox, { backgroundColor: C.surface, borderColor: C.border }]}>
-            <Text style={[s.statVal, { color: C.text }]}>{value}</Text>
+            <Text style={[s.statVal, { color: C.text }]} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
             <Text style={[s.statLabel, { color: C.textMuted }]}>{label}</Text>
           </View>
         ))}
@@ -305,7 +314,7 @@ export default function ProfileScreen() {
 
 const s = StyleSheet.create({
   pageTitle: { fontSize: 28, fontWeight: '800', letterSpacing: -0.5 },
-  scroll: { paddingHorizontal: Spacing.lg, gap: Spacing.md },
+  scroll: { gap: Spacing.md },
 
   hero: { flexDirection: 'row', alignItems: 'center', borderRadius: Radius.lg, borderWidth: 1, padding: Spacing.md, gap: Spacing.md },
   avatar: { width: 52, height: 52, borderRadius: 26, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },

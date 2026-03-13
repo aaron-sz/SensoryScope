@@ -23,6 +23,7 @@ import {
     TextInput,
     TouchableOpacity,
     View,
+    useWindowDimensions,
 } from 'react-native';
 import Animated, { FadeIn, FadeOut, SlideInDown, SlideOutDown } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -48,6 +49,9 @@ type Review = {
 export default function PlaceDetailSheet({ place, onClose }: Props) {
     const C = useColors();
     const insets = useSafeAreaInsets();
+    const { width } = useWindowDimensions();
+    const isTablet = width >= 600;
+    const sheetHInset = isTablet ? Math.max(0, (width - 520) / 2) : 0;
     const photoRef = place.photos?.[0]?.photo_reference;
     const isOpen = place.opening_hours?.open_now;
 
@@ -56,10 +60,10 @@ export default function PlaceDetailSheet({ place, onClose }: Props) {
     const [showReviewForm, setShowReviewForm] = useState(false);
     const [submitting, setSubmitting] = useState(false);
 
-    // Review form state
-    const [noise, setNoise] = useState(5);
-    const [light, setLight] = useState(5);
-    const [crowd, setCrowd] = useState(5);
+    // Review form state — null means "not yet chosen" to avoid biasing users with a default midpoint
+    const [noise, setNoise] = useState<number | null>(null);
+    const [light, setLight] = useState<number | null>(null);
+    const [crowd, setCrowd] = useState<number | null>(null);
     const [comment, setComment] = useState('');
 
     useEffect(() => {
@@ -86,7 +90,11 @@ export default function PlaceDetailSheet({ place, onClose }: Props) {
     const submitReview = async () => {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
-            Alert.alert('Sign in required', 'Go to Profile tab to sign in before submitting reviews.');
+            Alert.alert('Sign In Required', 'Head to the Profile tab to sign in before leaving a review.');
+            return;
+        }
+        if (noise === null || light === null || crowd === null) {
+            Alert.alert('Almost There', 'Please rate all three categories before submitting.');
             return;
         }
 
@@ -102,12 +110,12 @@ export default function PlaceDetailSheet({ place, onClose }: Props) {
         });
 
         if (error) {
-            Alert.alert('Error', error.message);
+            Alert.alert('Submission Failed', 'Your review couldn\'t be saved. Please try again.');
         } else {
             setShowReviewForm(false);
-            setNoise(5);
-            setLight(5);
-            setCrowd(5);
+            setNoise(null);
+            setLight(null);
+            setCrowd(null);
             setComment('');
             Keyboard.dismiss();
             fetchReviews();
@@ -147,7 +155,20 @@ export default function PlaceDetailSheet({ place, onClose }: Props) {
             <Animated.View
                 entering={SlideInDown.springify().damping(28).stiffness(260).mass(0.7)}
                 exiting={SlideOutDown.duration(140)}
-                style={[styles.sheet, { backgroundColor: C.elevated, paddingBottom: insets.bottom + 20 }]}
+                style={[
+                    styles.sheet,
+                    {
+                        backgroundColor: C.elevated,
+                        paddingBottom: insets.bottom + 20,
+                        left: sheetHInset,
+                        right: sheetHInset,
+                    },
+                    isTablet && {
+                        bottom: 16,
+                        borderBottomLeftRadius: 28,
+                        borderBottomRightRadius: 28,
+                    },
+                ]}
             >
                 <View style={[styles.handle, { backgroundColor: C.border }]} />
 
@@ -234,29 +255,34 @@ export default function PlaceDetailSheet({ place, onClose }: Props) {
                             {/* Inline review form */}
                             {showReviewForm && (
                                 <View style={[styles.reviewForm, { backgroundColor: C.surface, borderColor: C.border }]}>
-                                    <SliderRow label="🔊 Noise" value={noise} onChange={setNoise} />
-                                    <SliderRow label="💡 Light" value={light} onChange={setLight} />
-                                    <SliderRow label="👥 Crowd" value={crowd} onChange={setCrowd} />
+                                    <SliderRow label="🔊 Noise" value={noise} onChange={setNoise} C={C} />
+                                    <SliderRow label="💡 Light" value={light} onChange={setLight} C={C} />
+                                    <SliderRow label="👥 Crowd" value={crowd} onChange={setCrowd} C={C} />
 
-                                    <TextInput
-                                        style={[styles.commentInput, { color: C.text, borderColor: C.border, backgroundColor: C.elevated }]}
-                                        placeholder="How does this place feel? (optional)"
-                                        placeholderTextColor={C.textDim}
-                                        value={comment}
-                                        onChangeText={setComment}
-                                        multiline
-                                        maxLength={500}
-                                    />
+                                    <View>
+                                        <TextInput
+                                            style={[styles.commentInput, { color: C.text, borderColor: C.border, backgroundColor: C.elevated }]}
+                                            placeholder="How does this place feel? (optional)"
+                                            placeholderTextColor={C.textDim}
+                                            value={comment}
+                                            onChangeText={setComment}
+                                            multiline
+                                            maxLength={500}
+                                        />
+                                        <Text style={[styles.charCount, { color: C.textDim }]}>{comment.length}/500</Text>
+                                    </View>
 
                                     <TouchableOpacity
-                                        style={[styles.submitBtn, { backgroundColor: C.accent }]}
+                                        style={[styles.submitBtn, { backgroundColor: noise !== null && light !== null && crowd !== null ? C.accent : C.border }]}
                                         onPress={submitReview}
                                         disabled={submitting}
+                                        accessibilityRole="button"
+                                        accessibilityLabel="Submit review"
                                     >
                                         {submitting ? (
                                             <ActivityIndicator color={C.bg} size="small" />
                                         ) : (
-                                            <Text style={[styles.submitBtnText, { color: C.bg }]}>Submit Review</Text>
+                                            <Text style={[styles.submitBtnText, { color: noise !== null && light !== null && crowd !== null ? C.bg : C.textMuted }]}>Submit Review</Text>
                                         )}
                                     </TouchableOpacity>
                                 </View>
@@ -321,16 +347,21 @@ function SensoryBar({ label, score, color, icon }: { label: string; score: numbe
     );
 }
 
-function SliderRow({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
-    const C = useColors();
+function SliderRow({ label, value, onChange, C }: { label: string; value: number | null; onChange: (n: number) => void; C: ReturnType<typeof useColors> }) {
     return (
         <View style={styles.sliderRow}>
-            <Text style={[styles.sliderLabel, { color: C.text }]}>{label}</Text>
+            <View style={styles.sliderHeader}>
+                <Text style={[styles.sliderLabel, { color: C.text }]}>{label}</Text>
+                {value === null && <Text style={[styles.sliderHint, { color: C.textDim }]}>tap to rate</Text>}
+            </View>
             <View style={styles.sliderBtns}>
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
                     <TouchableOpacity
                         key={n}
                         onPress={() => onChange(n)}
+                        accessibilityRole="radio"
+                        accessibilityLabel={`${label} level ${n} of 10`}
+                        accessibilityState={{ checked: n === value }}
                         style={[
                             styles.numBtn,
                             {
@@ -387,11 +418,14 @@ const styles = StyleSheet.create({
 
     reviewForm: { padding: Spacing.md, borderRadius: Radius.sm, borderWidth: 1, gap: 12 },
     sliderRow: { gap: 6 },
+    sliderHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
     sliderLabel: { fontSize: 14, fontWeight: '600' },
+    sliderHint: { fontSize: 11, fontStyle: 'italic' },
     sliderBtns: { flexDirection: 'row', gap: 4 },
     numBtn: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
     numBtnText: { fontSize: 12, fontWeight: '700' },
     commentInput: { borderWidth: 1, borderRadius: Radius.sm, padding: 10, fontSize: 14, minHeight: 60, textAlignVertical: 'top' },
+    charCount: { fontSize: 11, textAlign: 'right', marginTop: 4 },
     submitBtn: { alignItems: 'center', paddingVertical: 12, borderRadius: Radius.sm },
     submitBtnText: { fontSize: 15, fontWeight: '700' },
 

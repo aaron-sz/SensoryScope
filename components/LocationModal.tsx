@@ -15,7 +15,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect } from 'react';
-import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
@@ -54,6 +54,9 @@ interface Props {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function LocationModal({ location, onClose }: Props) {
   const C = useColors();
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 600;
+  const sheetHInset = isTablet ? Math.max(0, (width - 480) / 2) : 0;
 
   let overallScore: number | null = null;
   if (location.avg_sound !== null && location.avg_light !== null && location.avg_crowd !== null) {
@@ -104,12 +107,19 @@ export default function LocationModal({ location, onClose }: Props) {
     <Animated.View
       entering={SlideInDown.springify().damping(22).stiffness(240)}
       exiting={SlideOutDown.springify().damping(22).stiffness(240)}
-      style={styles.sheet}
+      style={[
+        styles.sheet,
+        isTablet && { left: sheetHInset, right: sheetHInset, bottom: 16 },
+      ]}
     >
       <GestureDetector gesture={panGesture}>
         <Animated.View style={[styles.sheetInner, sheetStyle, {
           backgroundColor: C.surface,
           borderColor: C.border,
+        }, isTablet && {
+          borderBottomWidth: 1,
+          borderBottomLeftRadius: Radius.xl,
+          borderBottomRightRadius: Radius.xl,
         }]}>
           {/* Drag handle */}
           <View style={[styles.handle, { backgroundColor: C.border }]} />

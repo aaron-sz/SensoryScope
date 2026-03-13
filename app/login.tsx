@@ -9,31 +9,53 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
+    useWindowDimensions,
 } from 'react-native';
 import { Radius, Shadows, Spacing, useColors } from '../constants/theme';
 import { supabase } from '../lib/supabase';
 
 export default function LoginScreen() {
     const C = useColors();
+    const { width } = useWindowDimensions();
+    const isTablet = width >= 600;
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [loading, setLoading] = useState(false);
 
     const handleLogin = async () => {
-        if (!email || !password) {
-            Alert.alert('Error', 'Please enter your email and password.');
+        const trimmedEmail = email.trim();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!trimmedEmail || !password) {
+            Alert.alert('Missing Info', 'Please enter your email and password.');
+            return;
+        }
+        if (!emailRegex.test(trimmedEmail)) {
+            Alert.alert('Invalid Email', 'Please enter a valid email address.');
+            return;
+        }
+        if (password.length < 6) {
+            Alert.alert('Password Too Short', 'Password must be at least 6 characters.');
             return;
         }
         setLoading(true);
         const { error } = await supabase.auth.signInWithPassword({
-            email,
+            email: trimmedEmail,
             password,
         });
 
         setLoading(false);
         if (error) {
-            Alert.alert('Login Failed', error.message);
+            const msg = error.message.toLowerCase();
+            if (msg.includes('invalid login credentials') || msg.includes('invalid email or password')) {
+                Alert.alert('Incorrect Credentials', 'Email or password is incorrect. Please try again.');
+            } else if (msg.includes('email not confirmed')) {
+                Alert.alert('Email Not Confirmed', 'Check your inbox and confirm your email before signing in.');
+            } else if (msg.includes('too many requests') || msg.includes('rate limit')) {
+                Alert.alert('Too Many Attempts', 'Please wait a moment before trying again.');
+            } else {
+                Alert.alert('Sign In Failed', 'Something went wrong. Please try again.');
+            }
         } else {
             router.replace('/(tabs)' as any);
         }
@@ -44,7 +66,7 @@ export default function LoginScreen() {
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={[styles.container, { backgroundColor: C.bg }]}
         >
-            <View style={[styles.card, { backgroundColor: C.surface }]}>
+            <View style={[styles.card, { backgroundColor: C.surface }, isTablet && styles.cardTablet]}>
                 <Text style={[styles.title, { color: C.primary }]}>Welcome Back</Text>
                 <Text style={[styles.subtitle, { color: C.textMuted }]}>Sign in to continue to SensoryScope</Text>
 
@@ -121,6 +143,11 @@ const styles = StyleSheet.create({
         borderRadius: Radius.lg,
         padding: Spacing.xl,
         ...Shadows.card,
+    },
+    cardTablet: {
+        maxWidth: 460,
+        alignSelf: 'center',
+        width: '100%',
     },
     title: {
         fontSize: 28,
