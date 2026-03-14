@@ -1,39 +1,24 @@
 /**
- * MapLegend — Floating blurred card showing the sensory score color key.
+ * MapLegend — Floating card showing the sensory score color key.
  *
- * Responsive: on tablets (width ≥ 600px) positions to the top-right
- * to avoid collision with the larger FAB row.
+ * Solid themed background (white in light mode, dark navy in dark mode)
+ * so it reads cleanly against any map style.
  */
-import { BlurView } from 'expo-blur';
 import React, { memo } from 'react';
 import { StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import { DarkColors, Spacing } from '../../constants/theme';
-
-// ── Data ──────────────────────────────────────────────────────────────────────
-interface LegendRowData {
-  color: string;
-  label: string;
-  range: string;
-}
-
-const ROWS: LegendRowData[] = [
-  { color: DarkColors.calm,     label: 'Calm',     range: '1–3' },
-  { color: DarkColors.moderate, label: 'Moderate', range: '4–6' },
-  { color: DarkColors.intense,  label: 'Intense',  range: '7–10' },
-  { color: '#4A5568',           label: 'Unrated',  range: '–' },
-];
+import { Radius, Shadows, Spacing, useColors } from '../../constants/theme';
 
 const TABLET_BREAKPOINT = 600;
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 interface MapLegendProps {
   bottomOffset: number;
-  /** Top offset used only on tablet layout */
   topOffset?: number;
 }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 const MapLegend = memo(function MapLegend({ bottomOffset, topOffset = 120 }: MapLegendProps) {
+  const C = useColors();
   const { width } = useWindowDimensions();
   const isTablet = width >= TABLET_BREAKPOINT;
 
@@ -41,47 +26,47 @@ const MapLegend = memo(function MapLegend({ bottomOffset, topOffset = 120 }: Map
     ? { top: topOffset, right: 16, left: undefined }
     : { bottom: bottomOffset, left: 14, right: undefined };
 
+  const rows = [
+    { color: C.calm,     label: 'Calm',     range: '1–3'  },
+    { color: C.moderate, label: 'Moderate', range: '4–6'  },
+    { color: C.intense,  label: 'Intense',  range: '7–10' },
+    { color: C.textDim,  label: 'Unrated',  range: '–'    },
+  ];
+
   return (
     <View
-      style={[styles.outer, positionStyle]}
+      style={[styles.card, positionStyle, { backgroundColor: C.elevated, borderColor: C.border }]}
       pointerEvents="none"
       accessibilityLabel="Sensory score color key"
     >
-      <BlurView intensity={60} tint="dark" style={styles.blur}>
-        {ROWS.map((row) => (
-          <LegendRow key={row.label} {...row} />
-        ))}
-      </BlurView>
+      {rows.map((row) => (
+        <View key={row.label} style={styles.row}>
+          <View style={[styles.dot, { backgroundColor: row.color }]} />
+          <Text style={[styles.label, { color: C.text }]} allowFontScaling={false}>
+            {row.label}
+          </Text>
+          <Text style={[styles.range, { color: C.textMuted }]} allowFontScaling={false}>
+            {row.range}
+          </Text>
+        </View>
+      ))}
     </View>
   );
 });
 
 export default MapLegend;
 
-// ── LegendRow ─────────────────────────────────────────────────────────────────
-const LegendRow = memo(function LegendRow({ color, label, range }: LegendRowData) {
-  return (
-    <View style={styles.row}>
-      <View style={[styles.dot, { backgroundColor: color }]} />
-      <Text style={styles.label} allowFontScaling={false}>{label}</Text>
-      <Text style={styles.range} allowFontScaling={false}>{range}</Text>
-    </View>
-  );
-});
-
 // ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  outer: {
+  card: {
     position: 'absolute',
     zIndex: 10,
-    width: 140,
-    // Clip the BlurView corners on Android (BlurView ignores borderRadius itself)
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  blur: {
+    width: 136,
+    borderRadius: Radius.md,
+    borderWidth: 1,
     paddingHorizontal: Spacing.sm + 2,
     paddingVertical: Spacing.sm,
+    ...Shadows.card,
   },
   row: {
     flexDirection: 'row',
@@ -91,7 +76,7 @@ const styles = StyleSheet.create({
   dot: {
     width: 9,
     height: 9,
-    borderRadius: 4.5,
+    borderRadius: 5,
     marginRight: 7,
     flexShrink: 0,
   },
@@ -99,11 +84,10 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 11,
     fontWeight: '600',
-    color: '#F1F5F9',
   },
   range: {
     fontSize: 10,
-    color: '#94A3B8',
+    fontWeight: '500',
     width: 28,
     textAlign: 'right',
     flexShrink: 0,

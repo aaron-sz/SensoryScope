@@ -7,27 +7,30 @@ import { Platform, useColorScheme } from 'react-native';
 
 // ── Light Mode ─────────────────────────────────────────────────────────────
 export const LightColors = {
-  bg: '#FCFDFD',
-  surface: '#F4F4F5',
+  // Very subtle teal tint on backgrounds — warm, cohesive, intentional
+  bg: '#F5FBFA',
+  surface: '#EDF4F2',
   elevated: '#FFFFFF',
-  border: '#E4E4E7',
+  border: '#D8E8E5',
 
   primary: '#0F172A',
   primaryLight: '#475569',
   primaryDark: '#020617',
   primaryGlow: 'rgba(15, 23, 42, 0.04)',
 
-  accent: '#7a8d87',
-  accentLight: '#c0d2cb',
-  accentDark: '#6a6d6c',
-  accentGlow: 'rgba(68, 68, 68, 0.15)',
+  // Accent: proper sage-teal with actual saturation — distinct from calm (#3ab98f)
+  // Previous value (#7a8d87) had near-zero saturation and read as gray
+  accent: '#2A8C7C',
+  accentLight: '#7ECAC1',
+  accentDark: '#1F6B5E',
+  accentGlow: 'rgba(42, 140, 124, 0.15)',
 
   calm: '#3ab98f',
   moderate: '#ce9b43',
   intense: '#d74c64',
-  calmGlow: 'rgba(16, 185, 129, 0.12)',
-  moderateGlow: 'rgba(245, 159, 11, 0.12)',
-  intenseGlow: 'rgba(244, 63, 94, 0.12)',
+  calmGlow: 'rgba(58, 185, 143, 0.12)',
+  moderateGlow: 'rgba(206, 155, 67, 0.12)',
+  intenseGlow: 'rgba(215, 76, 100, 0.12)',
 
   text: '#1E293B',
   textMuted: '#64748B',
@@ -47,10 +50,13 @@ export const DarkColors: typeof LightColors = {
   primaryDark: '#F8FAFC',
   primaryGlow: 'rgba(241, 245, 249, 0.04)',
 
-  accent: '#10B981',
-  accentLight: '#34D399',
-  accentDark: '#059669',
-  accentGlow: 'rgba(16, 185, 129, 0.20)',
+  // Accent: blue-teal that is clearly distinct from calm (#10B981, green-teal)
+  // Previous value (#10B981) was identical to calm — UI elements and calm-scored
+  // data were visually indistinguishable. Now clearly different hue family.
+  accent: '#45BFB2',
+  accentLight: '#7DD5CF',
+  accentDark: '#2E8C86',
+  accentGlow: 'rgba(69, 191, 178, 0.20)',
 
   calm: '#10B981',
   moderate: '#F59E0B',

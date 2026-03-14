@@ -1,13 +1,14 @@
 /**
  * MapFilterBar — Horizontal scrollable category filter chips
  *
- * "All" chip clears filter; other chips filter map markers by Google Places category.
+ * Solid themed background so the whole bar reads cleanly against the map.
+ * Adapts to light / dark mode via useColors().
  */
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import React, { memo, useCallback } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { DarkColors, Radius, Spacing } from '../../constants/theme';
+import { Radius, Shadows, Spacing, useColors } from '../../constants/theme';
 
 // ── Category definitions ──────────────────────────────────────────────────────
 export type MapCategory = {
@@ -19,17 +20,17 @@ export type MapCategory = {
 };
 
 export const MAP_CATEGORIES: MapCategory[] = [
-  { key: 'all', label: 'All', icon: 'globe-outline' },
-  { key: 'restaurant', label: 'Food', icon: 'restaurant-outline', type: 'restaurant' },
-  { key: 'cafe', label: 'Café', icon: 'cafe-outline', type: 'cafe' },
-  { key: 'park', label: 'Parks', icon: 'leaf-outline', type: 'park' },
-  { key: 'library', label: 'Library', icon: 'library-outline', type: 'library' },
-  { key: 'shopping_mall', label: 'Shopping', icon: 'bag-outline', type: 'shopping_mall' },
-  { key: 'gym', label: 'Gym', icon: 'barbell-outline', type: 'gym' },
-  { key: 'bar', label: 'Bar', icon: 'wine-outline', type: 'bar' },
-  { key: 'museum', label: 'Museum', icon: 'business-outline', type: 'museum' },
-  { key: 'hospital', label: 'Hospital', icon: 'medkit-outline', type: 'hospital' },
-  { key: 'supermarket', label: 'Grocery', icon: 'cart-outline', type: 'supermarket' },
+  { key: 'all',            label: 'All',      icon: 'globe-outline'                          },
+  { key: 'restaurant',    label: 'Food',     icon: 'restaurant-outline', type: 'restaurant'    },
+  { key: 'cafe',          label: 'Café',     icon: 'cafe-outline',       type: 'cafe'          },
+  { key: 'park',          label: 'Parks',    icon: 'leaf-outline',       type: 'park'          },
+  { key: 'library',       label: 'Library',  icon: 'library-outline',    type: 'library'       },
+  { key: 'shopping_mall', label: 'Shopping', icon: 'bag-outline',        type: 'shopping_mall' },
+  { key: 'gym',           label: 'Gym',      icon: 'barbell-outline',    type: 'gym'           },
+  { key: 'bar',           label: 'Bar',      icon: 'wine-outline',       type: 'bar'           },
+  { key: 'museum',        label: 'Museum',   icon: 'business-outline',   type: 'museum'        },
+  { key: 'hospital',      label: 'Hospital', icon: 'medkit-outline',     type: 'hospital'      },
+  { key: 'supermarket',   label: 'Grocery',  icon: 'cart-outline',       type: 'supermarket'   },
 ];
 
 // ── Props ─────────────────────────────────────────────────────────────────────
@@ -40,6 +41,8 @@ interface MapFilterBarProps {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 const MapFilterBar = memo(function MapFilterBar({ activeKey, onChange }: MapFilterBarProps) {
+  const C = useColors();
+
   const handlePress = useCallback(
     (key: string) => {
       Haptics.selectionAsync();
@@ -49,21 +52,23 @@ const MapFilterBar = memo(function MapFilterBar({ activeKey, onChange }: MapFilt
   );
 
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={styles.scrollContent}
-      style={styles.scroll}
-    >
-      {MAP_CATEGORIES.map((cat) => (
-        <CategoryChip
-          key={cat.key}
-          category={cat}
-          isActive={activeKey === cat.key}
-          onPress={handlePress}
-        />
-      ))}
-    </ScrollView>
+    <View style={[styles.container, { backgroundColor: C.elevated, borderTopColor: C.border }]}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.scrollContent}
+        style={styles.scroll}
+      >
+        {MAP_CATEGORIES.map((cat) => (
+          <CategoryChip
+            key={cat.key}
+            category={cat}
+            isActive={activeKey === cat.key}
+            onPress={handlePress}
+          />
+        ))}
+      </ScrollView>
+    </View>
   );
 });
 
@@ -77,12 +82,16 @@ interface ChipProps {
 }
 
 const CategoryChip = memo(function CategoryChip({ category, isActive, onPress }: ChipProps) {
+  const C = useColors();
+
   return (
     <Pressable
       onPress={() => onPress(category.key)}
       style={({ pressed }) => [
         styles.chip,
-        isActive ? styles.chipActive : styles.chipInactive,
+        isActive
+          ? { backgroundColor: C.accent, borderColor: C.accent }
+          : { backgroundColor: C.surface, borderColor: C.border },
         pressed && styles.chipPressed,
       ]}
       accessibilityRole="button"
@@ -92,9 +101,12 @@ const CategoryChip = memo(function CategoryChip({ category, isActive, onPress }:
       <Ionicons
         name={category.icon}
         size={13}
-        color={isActive ? '#FFFFFF' : DarkColors.textMuted}
+        color={isActive ? '#FFFFFF' : C.accent}
       />
-      <Text style={[styles.chipLabel, isActive ? styles.chipLabelActive : styles.chipLabelInactive]}>
+      <Text style={[
+        styles.chipLabel,
+        { color: isActive ? '#FFFFFF' : C.text },
+      ]}>
         {category.label}
       </Text>
     </Pressable>
@@ -102,15 +114,17 @@ const CategoryChip = memo(function CategoryChip({ category, isActive, onPress }:
 });
 
 // ── Styles ────────────────────────────────────────────────────────────────────
-const ACCENT = '#10B981';
-
 const styles = StyleSheet.create({
+  container: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    ...Shadows.card,
+  },
   scroll: {
     flexGrow: 0,
   },
   scrollContent: {
     paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
+    paddingVertical: Spacing.sm,
     gap: Spacing.sm,
   },
   chip: {
@@ -122,26 +136,12 @@ const styles = StyleSheet.create({
     borderRadius: Radius.pill,
     borderWidth: 1,
   },
-  chipActive: {
-    backgroundColor: ACCENT,
-    borderColor: ACCENT,
-  },
-  chipInactive: {
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
   chipPressed: {
-    opacity: 0.75,
+    opacity: 0.7,
   },
   chipLabel: {
     fontSize: 12,
     fontWeight: '600',
     letterSpacing: 0.1,
-  },
-  chipLabelActive: {
-    color: '#FFFFFF',
-  },
-  chipLabelInactive: {
-    color: DarkColors.textMuted,
   },
 });

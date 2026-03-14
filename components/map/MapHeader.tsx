@@ -1,12 +1,12 @@
 /**
- * MapHeader — Blurred overlay header for the map screen.
+ * MapHeader — Solid themed overlay header for the map screen.
  * Shows app name, place count / loading state, and a refresh button.
+ * Adapts to light / dark mode via useColors().
  */
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
 import React, { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Spacing } from '../../constants/theme';
+import { Radius, Spacing, useColors } from '../../constants/theme';
 import MapFilterBar from './MapFilterBar';
 
 interface MapHeaderProps {
@@ -19,8 +19,6 @@ interface MapHeaderProps {
   onRefresh: () => void;
 }
 
-const ACCENT = '#10B981';
-
 const MapHeader = memo(function MapHeader({
   topInset,
   totalCount,
@@ -30,35 +28,36 @@ const MapHeader = memo(function MapHeader({
   onFilterChange,
   onRefresh,
 }: MapHeaderProps) {
+  const C = useColors();
+
   const subtitle = loading
     ? 'Finding places nearby…'
     : `${totalCount} places · ${ratedCount} rated`;
 
   return (
     <View style={[styles.outer, { paddingTop: topInset }]} pointerEvents="box-none">
-      <BlurView intensity={75} tint="dark" style={styles.blur}>
+      <View style={[styles.card, { backgroundColor: C.elevated, borderColor: C.border }]}>
         {/* Title row */}
         <View style={styles.titleRow} pointerEvents="box-none">
           <View style={styles.textBlock} pointerEvents="none">
-            <Text style={styles.title}>SensoryScope</Text>
-            <Text style={styles.subtitle} numberOfLines={1}>
+            <Text style={[styles.title, { color: C.text }]}>SensoryScope</Text>
+            <Text style={[styles.subtitle, { color: C.textMuted }]} numberOfLines={1}>
               {subtitle}
             </Text>
           </View>
           <Pressable
             onPress={onRefresh}
-            style={styles.refreshBtn}
+            style={[styles.refreshBtn, { backgroundColor: C.accentGlow }]}
             hitSlop={12}
             accessibilityLabel="Refresh places"
           >
-            <Ionicons name="refresh" size={18} color={ACCENT} />
+            <Ionicons name="refresh" size={18} color={C.accent} />
           </Pressable>
         </View>
 
         {/* Filter bar */}
         <MapFilterBar activeKey={activeFilter} onChange={onFilterChange} />
-        <View style={styles.filterSpacer} />
-      </BlurView>
+      </View>
     </View>
   );
 });
@@ -72,17 +71,25 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     zIndex: 10,
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.sm,
   },
-  blur: {
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
+  card: {
+    borderRadius: Radius.lg,
+    borderWidth: 1,
     overflow: 'hidden',
+    // Subtle shadow so the card lifts off the map
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 8,
   },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.md,
-    paddingTop: Spacing.sm,
+    paddingTop: Spacing.sm + 2,
     paddingBottom: 6,
     gap: Spacing.sm,
   },
@@ -92,23 +99,17 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: '800',
-    color: '#F1F5F9',
     letterSpacing: -0.4,
   },
   subtitle: {
     fontSize: 12,
-    color: '#94A3B8',
     marginTop: 1,
   },
   refreshBtn: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(16,185,129,0.14)',
+    borderRadius: Radius.pill,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  filterSpacer: {
-    height: 4,
   },
 });

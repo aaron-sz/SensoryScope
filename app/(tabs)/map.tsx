@@ -62,7 +62,8 @@ import TrafficLayer from '../../components/map/TrafficLayer';
 import TrafficLegend from '../../components/map/TrafficLegend';
 import TrafficToggle from '../../components/map/TrafficToggle';
 import { MAP_CATEGORIES } from '../../components/map/MapFilterBar';
-import { DarkColors } from '../../constants/theme';
+import { DarkColors, useColors, } from '../../constants/theme';
+import { useColorScheme } from 'react-native';
 import { useMapCamera } from '../../hooks/useMapCamera';
 import { useNearbyPlaces, type MapPlace } from '../../hooks/useNearbyPlaces';
 
@@ -166,12 +167,33 @@ const TAB_BAR_HEIGHT = 90;
 const NEARBY_RADIUS_M = 5000;
 const TABLET_BREAKPOINT = 600;
 const TRAFFIC_FADE_MS = 550;
+// How far (meters) the map center must move before triggering a new fetch
+const MIN_PAN_REFETCH_M = 2500;
+// How long to wait after the user stops panning before fetching (ms)
+const PAN_DEBOUNCE_MS = 800;
+
+// ── Haversine (meters) ────────────────────────────────────────────────────────
+function distMeters(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLng = ((lng2 - lng1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
 
 // ── Main Component ────────────────────────────────────────────────────────────
 export default function MapScreen() {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const isTablet = width >= TABLET_BREAKPOINT;
+  const C = useColors();
+  const mapStyleURL = C === DarkColors
+    ? 'mapbox://styles/aaronnnn/cmmqhj5yd000401s6bbso6qma'
+    : 'mapbox://styles/aaronnnn/cmmqgvnh7006h01qu8qsl4wcy';
   const { cameraRef, flyTo, flyToUser, resetToUser } = useMapCamera();
 
   // ── State ───────────────────────────────────────────────────────────────────
@@ -184,8 +206,15 @@ export default function MapScreen() {
   const [trafficMounted, setTrafficMounted] = useState(false);
   const [trafficOpacity, setTrafficOpacity] = useState(0);
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Track map centers we've already fetched so we skip redundant calls
+  const fetchedCentersRef = useRef<Array<[number, number]>>([]);
+  const panFetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [isFetchingArea, setIsFetchingArea] = useState(false);
+  // Track the last user-panned camera state so close restores it (not user location)
+  const lastCameraRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
+  const preSelectCameraRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
 
-  const { places, loading, error, refetch } = useNearbyPlaces(
+  const { places, loading, error, refetch, fetchAround } = useNearbyPlaces(
     userCoords ? userCoords[1] : null,
     userCoords ? userCoords[0] : null,
     NEARBY_RADIUS_M,
@@ -205,6 +234,8 @@ export default function MapScreen() {
         if (cancelled) return;
         const coords: [number, number] = [loc.coords.longitude, loc.coords.latitude];
         setUserCoords(coords);
+        // Seed the initial fetch center so nearby pans don't re-fetch the same area
+        fetchedCentersRef.current = [[loc.coords.latitude, loc.coords.longitude]];
         flyTo(coords, 13, 1200, 0);
       } catch {
         // Default US_CENTER view stays
@@ -284,6 +315,8 @@ export default function MapScreen() {
       const found = filteredPlaces.find((p) => p.id === id);
       if (!found) return;
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      // Snapshot camera state before flying to the marker so close can restore it
+      preSelectCameraRef.current = lastCameraRef.current;
       setSelectedPlace(found);
       flyTo([found.longitude, found.latitude], 15, 800, 35);
     },
@@ -292,8 +325,14 @@ export default function MapScreen() {
 
   const handleClose = useCallback(() => {
     setSelectedPlace(null);
-    resetToUser(userCoords);
-  }, [resetToUser, userCoords]);
+    if (preSelectCameraRef.current) {
+      const { center, zoom } = preSelectCameraRef.current;
+      flyTo(center, zoom, 550, 0);
+      preSelectCameraRef.current = null;
+    } else {
+      resetToUser(userCoords);
+    }
+  }, [flyTo, resetToUser, userCoords]);
 
   const handleFlyToUser = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -307,6 +346,45 @@ export default function MapScreen() {
   const handleTrafficToggle = useCallback(() => {
     setShowTraffic((prev) => !prev);
   }, []);
+
+  // ── Auto-fetch on pan ──────────────────────────────────────────────────────
+  const handleRegionDidChange = useCallback(
+    (event: any) => {
+      // Always track the latest camera center+zoom for restore-on-close
+      const [lng, lat] = event.geometry.coordinates as [number, number];
+      const zoom = event.properties?.zoomLevel ?? 13;
+      lastCameraRef.current = { center: [lng, lat], zoom };
+
+      // Ignore programmatic camera moves for the pan-fetch logic
+      if (!event.properties?.isUserInteraction) return;
+
+      // Debounce — reset timer each time the region changes
+      if (panFetchTimerRef.current) clearTimeout(panFetchTimerRef.current);
+      panFetchTimerRef.current = setTimeout(() => {
+        // Skip if we've already fetched close to this center
+        const alreadyCovered = fetchedCentersRef.current.some(
+          ([fLat, fLng]) => distMeters(lat, lng, fLat, fLng) < MIN_PAN_REFETCH_M,
+        );
+        if (alreadyCovered) return;
+
+        // Register center and kick off background fetch
+        fetchedCentersRef.current.push([lat, lng]);
+        setIsFetchingArea(true);
+        fetchAround(lat, lng);
+        // Clear the indicator after a generous window
+        setTimeout(() => setIsFetchingArea(false), 3500);
+      }, PAN_DEBOUNCE_MS);
+    },
+    [fetchAround],
+  );
+
+  // Reset fetch-center cache whenever the user triggers a hard refetch
+  const handleRefetch = useCallback(() => {
+    fetchedCentersRef.current = userCoords
+      ? [[userCoords[1], userCoords[0]]]
+      : [];
+    refetch();
+  }, [refetch, userCoords]);
 
   // ── Derived values ─────────────────────────────────────────────────────────
   const ratedCount = useMemo(
@@ -348,14 +426,16 @@ export default function MapScreen() {
     <View style={styles.container}>
       {/* ── Map ─────────────────────────────────────────────────────────── */}
       <MapView
+        key={mapStyleURL}
         style={styles.map}
-        styleURL="mapbox://styles/mapbox/dark-v11"
-        // light day map: mapbox://styles/aaronnnn/cmmlf5jnx009t01qu40kb8xto
+        styleURL={mapStyleURL}
+        
         scaleBarEnabled={false}
         attributionEnabled={false}
         logoEnabled={false}
         compassEnabled
         compassPosition={{ top: compassTop, right: 16 }}
+        onRegionDidChange={handleRegionDidChange}
       >
         <Camera
           ref={cameraRef}
@@ -393,36 +473,42 @@ export default function MapScreen() {
         loading={loading}
         activeFilter={activeFilter}
         onFilterChange={handleFilterChange}
-        onRefresh={refetch}
+        onRefresh={handleRefetch}
       />
 
-      {/* ── Sensory Legend ───────────────────────────────────────────────── */}
-      <MapLegend
-        bottomOffset={legendBottomOffset}
-        topOffset={legendTopOffset}
-      />
+      {/* ── Sensory Legend — hidden while a place is open ───────────────── */}
+      {!selectedPlace && (
+        <MapLegend
+          bottomOffset={legendBottomOffset}
+          topOffset={legendTopOffset}
+        />
+      )}
 
-      {/* ── Traffic Legend (when traffic ON) ────────────────────────────── */}
-      {showTraffic && (
+      {/* ── Traffic Legend (when traffic ON, no place selected) ──────────── */}
+      {showTraffic && !selectedPlace && (
         <TrafficLegend
           bottomOffset={TAB_BAR_HEIGHT + 12}
           topOffset={trafficLegendTopOffset}
         />
       )}
 
-      {/* ── Traffic Toggle FAB ───────────────────────────────────────────── */}
-      <TrafficToggle
-        isActive={showTraffic}
-        bottomOffset={trafficToggleBottom}
-        onToggle={handleTrafficToggle}
-      />
+      {/* ── Traffic Toggle FAB — hidden while a place is open ────────────── */}
+      {!selectedPlace && (
+        <TrafficToggle
+          isActive={showTraffic}
+          bottomOffset={trafficToggleBottom}
+          onToggle={handleTrafficToggle}
+        />
+      )}
 
-      {/* ── Locate Me FAB ────────────────────────────────────────────────── */}
-      <MapFAB
-        bottomOffset={fabBottom}
-        onPress={handleFlyToUser}
-        disabled={!locationGranted}
-      />
+      {/* ── Locate Me FAB — hidden while a place is open ────────────────── */}
+      {!selectedPlace && (
+        <MapFAB
+          bottomOffset={fabBottom}
+          onPress={handleFlyToUser}
+          disabled={!locationGranted}
+        />
+      )}
 
       {/* ── Loading overlay (first load only) ───────────────────────────── */}
       {loading && places.length === 0 && (
@@ -439,6 +525,14 @@ export default function MapScreen() {
           topOffset={insets.top + 130}
           onRetry={refetch}
         />
+      )}
+
+      {/* ── Pan-fetch indicator ──────────────────────────────────────────── */}
+      {isFetchingArea && (
+        <View style={[styles.fetchPill, { top: insets.top + 130 }]}>
+          <ActivityIndicator size="small" color="#FFFFFF" style={{ transform: [{ scale: 0.75 }] }} />
+          <Text style={styles.fetchPillText}>Searching area…</Text>
+        </View>
       )}
 
       {/* ── Location Modal ──────────────────────────────────────────────── */}
@@ -519,5 +613,24 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
+  },
+  fetchPill: {
+    position: 'absolute',
+    alignSelf: 'center',
+    left: '50%',
+    transform: [{ translateX: -70 }],
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(30,40,60,0.88)',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 99,
+    zIndex: 25,
+  },
+  fetchPillText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

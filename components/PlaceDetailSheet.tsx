@@ -59,6 +59,7 @@ export default function PlaceDetailSheet({ place, onClose }: Props) {
     const [loadingReviews, setLoadingReviews] = useState(true);
     const [showReviewForm, setShowReviewForm] = useState(false);
     const [submitting, setSubmitting] = useState(false);
+    const [reviewThanks, setReviewThanks] = useState(false);
 
     // Review form state — null means "not yet chosen" to avoid biasing users with a default midpoint
     const [noise, setNoise] = useState<number | null>(null);
@@ -118,6 +119,8 @@ export default function PlaceDetailSheet({ place, onClose }: Props) {
             setCrowd(null);
             setComment('');
             Keyboard.dismiss();
+            setReviewThanks(true);
+            setTimeout(() => setReviewThanks(false), 2800);
             fetchReviews();
         }
         setSubmitting(false);
@@ -288,6 +291,19 @@ export default function PlaceDetailSheet({ place, onClose }: Props) {
                                 </View>
                             )}
 
+                            {/* Thank-you flash after inline review submit */}
+                            {reviewThanks && (
+                                <Animated.View
+                                    entering={FadeIn.duration(250)}
+                                    exiting={FadeOut.duration(400)}
+                                    style={[styles.thanksBanner, { backgroundColor: C.calm + '18', borderColor: C.calm + '44' }]}
+                                >
+                                    <Text style={[styles.thanksText, { color: C.calm }]}>
+                                        🌿 Thank you — your rating helps the community.
+                                    </Text>
+                                </Animated.View>
+                            )}
+
                             {/* Review list */}
                             {loadingReviews ? (
                                 <ActivityIndicator color={C.accent} style={{ marginVertical: 16 }} />
@@ -428,6 +444,9 @@ const styles = StyleSheet.create({
     charCount: { fontSize: 11, textAlign: 'right', marginTop: 4 },
     submitBtn: { alignItems: 'center', paddingVertical: 12, borderRadius: Radius.sm },
     submitBtnText: { fontSize: 15, fontWeight: '700' },
+
+    thanksBanner: { borderRadius: Radius.sm, borderWidth: 1, padding: Spacing.md, marginBottom: 8 },
+    thanksText: { fontSize: 13, fontWeight: '600', textAlign: 'center' },
 
     reviewItem: { borderBottomWidth: 1, paddingVertical: 10, gap: 4 },
     reviewScores: { flexDirection: 'row', gap: 12 },

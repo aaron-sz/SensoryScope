@@ -8,7 +8,7 @@ Our primary goal is to empower neurodivergent individuals, veterans with PTSD, a
 ## 2. TARGET AUDIENCE & UX PHILOSOPHY
 **The User:** May be opening this app while currently experiencing sensory overload, anxiety, or a panic attack.
 **The UX Mandate: "Apple Health / Calm Minimalist"**
-- **Aesthetic:** We have a quirky 8-bit brand icon, but the **app interior must be strictly modern, sleek, and highly accessible**. Think large typography, abundant white space, soft rounded corners (Radius 14-20), and extremely subtle diffused shadows.
+- **Aesthetic:**the **app interior must be strictly modern, sleek, and highly accessible**. Think large typography, abundant white space, soft rounded corners (Radius 14-20), and extremely subtle diffused shadows.
 - **Zero Friction:** The user must be able to find a "Safe Haven" in 2 taps or less.
 - **No Aggressive UI:** Do NOT use harsh colors (like pure `#FF0000`). Use soft, pastel-leaning tones (e.g., Emerald Green for safe, Rose/Coral for intense).
 - **High Legibility:** Use clear typography, high contrast for text, and distinct visual hierarchy.

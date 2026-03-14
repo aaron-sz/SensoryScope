@@ -1,7 +1,7 @@
 /**
  * Profile Screen
  * Uses useUserStats hook — reads from the correct `place_reviews` table.
- * Shows: hero card, stats row, badges (earned + locked), sensory prefs,
+ * Shows: hero card, stats row, badges (earned + locked),
  * appearance toggle, and recent reviews.
  */
 import { Feather } from '@expo/vector-icons';
@@ -27,8 +27,13 @@ import { supabase } from '../../lib/supabase';
 import { useAuth } from '../_layout';
 
 type AppearanceMode = 'system' | 'light' | 'dark';
-type SensitivityLevel = 'low' | 'med' | 'high';
-type SensoryPrefs = { noise: SensitivityLevel; light: SensitivityLevel; crowds: SensitivityLevel };
+
+// ── Appearance segmented control ─────────────────────────────────────────────
+const APPEARANCE_OPTIONS: { mode: AppearanceMode; icon: 'sun' | 'smartphone' | 'moon'; label: string }[] = [
+  { mode: 'light', icon: 'sun', label: 'Light' },
+  { mode: 'system', icon: 'smartphone', label: 'Auto' },
+  { mode: 'dark', icon: 'moon', label: 'Dark' },
+];
 
 // ── Guest promo ──────────────────────────────────────────────────────────────
 function GuestPromoCard({ hPad }: { hPad: number }) {
@@ -87,40 +92,6 @@ const g = StyleSheet.create({
   perkDesc: { fontSize: 13, lineHeight: 18 },
 });
 
-// ── Sensitivity picker ───────────────────────────────────────────────────────
-function SensitivityPicker({ label, value, onChange }: { label: string; value: SensitivityLevel; onChange: (v: SensitivityLevel) => void }) {
-  const C = useColors();
-  const colors: Record<SensitivityLevel, string> = { low: C.calm, med: C.moderate, high: C.intense };
-  return (
-    <View style={sp.row}>
-      <Text style={[sp.label, { color: C.text }]}>{label}</Text>
-      <View style={sp.pills}>
-        {(['low', 'med', 'high'] as SensitivityLevel[]).map((lvl) => {
-          const active = value === lvl;
-          return (
-            <TouchableOpacity
-              key={lvl}
-              style={[sp.pill, { borderColor: colors[lvl], backgroundColor: active ? colors[lvl] + '33' : 'transparent' }]}
-              onPress={() => onChange(lvl)}
-            >
-              <Text style={[sp.pillText, { color: active ? colors[lvl] : C.textMuted, fontWeight: active ? '700' : '500' }]}>
-                {lvl.charAt(0).toUpperCase() + lvl.slice(1)}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-    </View>
-  );
-}
-const sp = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingVertical: 12 },
-  label: { flex: 1, fontSize: 15, fontWeight: '500' },
-  pills: { flexDirection: 'row', gap: 6 },
-  pill: { borderWidth: 1.5, borderRadius: 99, paddingHorizontal: 10, paddingVertical: 4 },
-  pillText: { fontSize: 12 },
-});
-
 // ── Main Profile ─────────────────────────────────────────────────────────────
 export default function ProfileScreen() {
   const { session, isGuest } = useAuth();
@@ -132,7 +103,6 @@ export default function ProfileScreen() {
   const hPad = width >= 600 ? Math.max(Spacing.lg, (width - 640) / 2) : Spacing.lg;
 
   const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>('system');
-  const [prefs, setPrefs] = useState<SensoryPrefs>({ noise: 'med', light: 'med', crowds: 'med' });
 
   const stats = useUserStats(session?.user.id);
 
@@ -144,6 +114,14 @@ export default function ProfileScreen() {
     session?.user.user_metadata?.name ||
     session?.user.email?.split('@')[0] ||
     'Explorer';
+
+  // Time-of-day greeting — simple and warm, not gimmicky
+  const greeting = (() => {
+    const hour = new Date().getHours();
+    if (hour < 12) return 'Good morning';
+    if (hour < 17) return 'Good afternoon';
+    return 'Good evening';
+  })();
 
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
@@ -185,6 +163,7 @@ export default function ProfileScreen() {
           <Text style={{ fontSize: 26 }}>🧭</Text>
         </View>
         <View style={{ flex: 1 }}>
+          <Text style={[s.heroGreeting, { color: C.textDim }]}>{greeting}</Text>
           <Text style={[s.heroName, { color: C.text }]} numberOfLines={1}>{displayName}</Text>
           <Text style={[s.heroEmail, { color: C.textMuted }]} numberOfLines={1}>{session?.user.email}</Text>
         </View>
@@ -237,38 +216,30 @@ export default function ProfileScreen() {
         )}
       </View>
 
-      {/* ── Sensory profile ── */}
-      <Text style={[s.sectionTitle, { color: C.text }]}>My Sensory Profile</Text>
-      <Text style={[s.sectionSub, { color: C.textMuted }]}>
-        Set your sensitivity levels so the map highlights the right places for you.
-      </Text>
-      <View style={[s.group, { backgroundColor: C.surface, borderColor: C.border }]}>
-        <SensitivityPicker label="🔊 Noise"  value={prefs.noise}  onChange={(v) => setPrefs((p) => ({ ...p, noise: v }))} />
-        <View style={[s.divider, { backgroundColor: C.border }]} />
-        <SensitivityPicker label="💡 Light"  value={prefs.light}  onChange={(v) => setPrefs((p) => ({ ...p, light: v }))} />
-        <View style={[s.divider, { backgroundColor: C.border }]} />
-        <SensitivityPicker label="👥 Crowds" value={prefs.crowds} onChange={(v) => setPrefs((p) => ({ ...p, crowds: v }))} />
-      </View>
-
       {/* ── Appearance ── */}
-      <Text style={[s.sectionTitle, { color: C.text }]}>Appearance</Text>
-      <View style={[s.group, { backgroundColor: C.surface, borderColor: C.border }]}>
-        {(['light', 'system', 'dark'] as AppearanceMode[]).map((mode, i, arr) => (
-          <View key={mode}>
-            <TouchableOpacity style={s.menuRow} onPress={() => setAppearance(mode)} activeOpacity={0.7}>
-              <Feather
-                name={mode === 'light' ? 'sun' : mode === 'dark' ? 'moon' : 'smartphone'}
-                size={20}
-                color={appearanceMode === mode ? C.accent : C.textMuted}
-              />
-              <Text style={[s.menuText, { color: C.text }]}>
-                {mode === 'light' ? 'Light Mode' : mode === 'dark' ? 'Dark Mode' : 'System Default'}
-              </Text>
-              {appearanceMode === mode && <Feather name="check-circle" size={18} color={C.accent} />}
-            </TouchableOpacity>
-            {i < arr.length - 1 && <View style={[s.divider, { backgroundColor: C.border }]} />}
-          </View>
-        ))}
+      <View style={s.appearanceRow}>
+        <Text style={[s.sectionTitle, { color: C.text, marginTop: 0 }]}>Appearance</Text>
+        <View style={[s.segmented, { backgroundColor: C.surface, borderColor: C.border }]}>
+          {APPEARANCE_OPTIONS.map(({ mode, icon, label }) => {
+            const active = appearanceMode === mode;
+            return (
+              <TouchableOpacity
+                key={mode}
+                style={[s.segmentBtn, active && { backgroundColor: C.elevated }]}
+                onPress={() => setAppearance(mode)}
+                activeOpacity={0.7}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: active }}
+                accessibilityLabel={label}
+              >
+                <Feather name={icon} size={14} color={active ? C.accent : C.textDim} />
+                <Text style={[s.segmentLabel, { color: active ? C.text : C.textMuted, fontWeight: active ? '700' : '500' }]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
       {/* ── Recent reviews ── */}
@@ -318,6 +289,7 @@ const s = StyleSheet.create({
 
   hero: { flexDirection: 'row', alignItems: 'center', borderRadius: Radius.lg, borderWidth: 1, padding: Spacing.md, gap: Spacing.md },
   avatar: { width: 52, height: 52, borderRadius: 26, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  heroGreeting: { fontSize: 11, fontWeight: '500', textTransform: 'uppercase', letterSpacing: 0.6, marginBottom: 2 },
   heroName: { fontSize: 17, fontWeight: '700' },
   heroEmail: { fontSize: 13, marginTop: 2 },
 
@@ -327,7 +299,6 @@ const s = StyleSheet.create({
   statLabel: { fontSize: 10, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.4 },
 
   sectionTitle: { fontSize: 17, fontWeight: '700', letterSpacing: -0.2, marginTop: Spacing.xs },
-  sectionSub: { fontSize: 13, lineHeight: 18, marginTop: -Spacing.xs },
 
   group: { borderRadius: Radius.lg, borderWidth: 1, paddingVertical: 4, overflow: 'hidden' },
   divider: { height: StyleSheet.hairlineWidth, marginLeft: 52 },
@@ -339,8 +310,10 @@ const s = StyleSheet.create({
   emptyBadge: { padding: Spacing.md, alignItems: 'center' },
   emptyText: { fontSize: 13, textAlign: 'center' },
 
-  menuRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingVertical: 14, gap: Spacing.md },
-  menuText: { flex: 1, fontSize: 15, fontWeight: '500' },
+  appearanceRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.md },
+  segmented: { flexDirection: 'row', borderRadius: Radius.md, borderWidth: 1, overflow: 'hidden', padding: 3, gap: 2 },
+  segmentBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 10, paddingVertical: 6, borderRadius: Radius.sm - 2 },
+  segmentLabel: { fontSize: 12 },
 
   emptyState: { borderRadius: Radius.lg, borderWidth: 1, borderStyle: 'dashed', padding: Spacing.xl, alignItems: 'center', gap: Spacing.sm },
 

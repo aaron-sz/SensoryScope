@@ -147,6 +147,15 @@ export default function SubmitScreen() {
   const allPicked = CATEGORIES.every((c) => picks[c.key] !== null);
   const ratedCount = CATEGORIES.filter((c) => picks[c.key] !== null).length;
 
+  // Progressive subtitle copy — encourages without being loud
+  const SUBTITLE_COPY = [
+    'Tap a dot to start rating',
+    'Nice — 2 more to go',
+    'Almost there — one more',
+    'All set — submit when ready',
+  ] as const;
+  const subtitleCopy = SUBTITLE_COPY[ratedCount];
+
   // Stable handler — prevents CategoryCard from re-rendering when sibling categories change
   const handlePick = useCallback((key: CategoryKey, v: number) => {
     setPicks((p) => ({ ...p, [key]: v }));
@@ -264,9 +273,13 @@ export default function SubmitScreen() {
         {/* Header */}
         <Animated.View entering={FadeInDown.delay(0).duration(400)}>
           <Text style={[styles.title, { color: C.text }]}>How does{'\n'}it feel?</Text>
-          <Text style={[styles.subtitle, { color: C.textMuted }]}>
-            Rate 1–10 · {ratedCount} of 3 rated
-          </Text>
+          <Animated.Text
+            key={ratedCount}
+            entering={FadeInDown.duration(220)}
+            style={[styles.subtitle, { color: ratedCount === 3 ? C.accent : C.textMuted }]}
+          >
+            {subtitleCopy}
+          </Animated.Text>
         </Animated.View>
 
         {/* Location */}

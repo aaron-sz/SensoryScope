@@ -90,11 +90,11 @@ export default function SignupScreen() {
             style={[styles.container, { backgroundColor: C.bg }]}
         >
             <View style={[styles.card, { backgroundColor: C.surface }, isTablet && styles.cardTablet]}>
-                <Text style={[styles.title, { color: C.primary }]}>Create Account</Text>
+                <Text style={[styles.title, { color: C.accent }]}>Create Account</Text>
                 <Text style={[styles.subtitle, { color: C.textMuted }]}>Join SensoryScope today</Text>
 
                 <View style={styles.inputContainer}>
-                    <Text style={[styles.label, { color: C.primaryLight }]}>Username</Text>
+                    <Text style={[styles.label, { color: C.textMuted }]}>Username</Text>
                     <TextInput
                         style={[styles.input, { backgroundColor: C.bg, borderColor: C.border, color: C.text }]}
                         placeholder="johndoe123"
@@ -107,7 +107,7 @@ export default function SignupScreen() {
                 </View>
 
                 <View style={styles.inputContainer}>
-                    <Text style={[styles.label, { color: C.primaryLight }]}>Email</Text>
+                    <Text style={[styles.label, { color: C.textMuted }]}>Email</Text>
                     <TextInput
                         style={[styles.input, { backgroundColor: C.bg, borderColor: C.border, color: C.text }]}
                         placeholder="your@email.com"
@@ -121,7 +121,7 @@ export default function SignupScreen() {
                 </View>
 
                 <View style={styles.inputContainer}>
-                    <Text style={[styles.label, { color: C.primaryLight }]}>Password</Text>
+                    <Text style={[styles.label, { color: C.textMuted }]}>Password</Text>
                     <TextInput
                         style={[styles.input, { backgroundColor: C.bg, borderColor: C.border, color: C.text }]}
                         placeholder="••••••••"

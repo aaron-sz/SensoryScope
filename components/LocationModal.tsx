@@ -15,9 +15,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useEffect } from 'react';
-import { ActivityIndicator, Linking, Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { ActivityIndicator, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
   runOnJS,
   SlideInDown,
   SlideOutDown,
@@ -52,11 +54,19 @@ interface Props {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
+// Matches FloatingTabBar BAR_HEIGHT
+const TAB_BAR_H = 64;
+
 export default function LocationModal({ location, onClose }: Props) {
   const C = useColors();
-  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
   const isTablet = width >= 600;
   const sheetHInset = isTablet ? Math.max(0, (width - 480) / 2) : 0;
+  // Position the sheet above the tab bar + device safe area
+  const sheetBottom = TAB_BAR_H + insets.bottom;
+  // Cap height so the sheet never grows above the safe area top (+ 60px breathing room)
+  const maxSheetHeight = height - insets.top - sheetBottom - 60;
 
   let overallScore: number | null = null;
   if (location.avg_sound !== null && location.avg_light !== null && location.avg_crowd !== null) {
@@ -82,7 +92,7 @@ export default function LocationModal({ location, onClose }: Props) {
       if (e.translationY > 120) {
         runOnJS(onClose)();
       } else {
-        sheetY.value = withSpring(0, { damping: 20, stiffness: 260 });
+        sheetY.value = withSpring(0, { damping: 28, stiffness: 320 });
       }
     });
 
@@ -104,87 +114,100 @@ export default function LocationModal({ location, onClose }: Props) {
   };
 
   return (
-    <Animated.View
-      entering={SlideInDown.springify().damping(22).stiffness(240)}
-      exiting={SlideOutDown.springify().damping(22).stiffness(240)}
-      style={[
-        styles.sheet,
-        isTablet && { left: sheetHInset, right: sheetHInset, bottom: 16 },
-      ]}
+    <Modal
+      visible
+      transparent
+      statusBarTranslucent
+      animationType="none"
+      onRequestClose={onClose}
     >
-      <GestureDetector gesture={panGesture}>
-        <Animated.View style={[styles.sheetInner, sheetStyle, {
-          backgroundColor: C.surface,
-          borderColor: C.border,
-        }, isTablet && {
-          borderBottomWidth: 1,
-          borderBottomLeftRadius: Radius.xl,
-          borderBottomRightRadius: Radius.xl,
-        }]}>
-          {/* Drag handle */}
-          <View style={[styles.handle, { backgroundColor: C.border }]} />
+      {/* box-none lets the pan gesture through; tapping outside does nothing (expected) */}
+      <View style={styles.overlay} pointerEvents="box-none">
+        <Animated.View
+          entering={SlideInDown.duration(240).easing(Easing.out(Easing.cubic))}
+          exiting={SlideOutDown.duration(180).easing(Easing.in(Easing.quad))}
+          style={[
+            styles.sheet,
+            { bottom: sheetBottom },
+            isTablet && { left: sheetHInset, right: sheetHInset },
+          ]}
+        >
+          <GestureDetector gesture={panGesture}>
+            <Animated.View style={[styles.sheetInner, sheetStyle, {
+              backgroundColor: C.surface,
+              borderColor: C.border,
+              maxHeight: maxSheetHeight,
+            }]}>
+              {/* Drag handle — always visible at top */}
+              <View style={[styles.handle, { backgroundColor: C.border }]} />
 
-          {/* Header row */}
-          <View style={styles.header}>
-            <View style={styles.headerText}>
-              <Text style={[styles.locationName, { color: C.text }]} numberOfLines={1}>
-                {location.name}
-              </Text>
-              <Text style={[styles.reviewCount, { color: C.textMuted }]}>
-                {location.review_count ?? 0} sensory rating{location.review_count !== 1 ? 's' : ''}
-              </Text>
-            </View>
-            <Pressable
-              onPress={onClose}
-              style={[styles.closeBtn, { backgroundColor: C.elevated }]}
-              hitSlop={12}
-              accessibilityRole="button"
-              accessibilityLabel="Close"
-            >
-              <Ionicons name="close" size={20} color={C.textMuted} />
-            </Pressable>
-          </View>
+              {/* Header row — always visible */}
+              <View style={styles.header}>
+                <View style={styles.headerText}>
+                  <Text style={[styles.locationName, { color: C.text }]} numberOfLines={1}>
+                    {location.name}
+                  </Text>
+                  <Text style={[styles.reviewCount, { color: C.textMuted }]}>
+                    {location.review_count ?? 0} sensory rating{location.review_count !== 1 ? 's' : ''}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={onClose}
+                  style={[styles.closeBtn, { backgroundColor: C.elevated }]}
+                  hitSlop={12}
+                  accessibilityRole="button"
+                  accessibilityLabel="Close"
+                >
+                  <Ionicons name="close" size={20} color={C.textMuted} />
+                </Pressable>
+              </View>
 
-          {/* Description / address */}
-          {!!location.description && (
-            <Text style={[styles.description, { color: C.textMuted }]} numberOfLines={2}>
-              {location.description}
-            </Text>
-          )}
+              {/* Scrollable body — scores, busyness, address */}
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.scrollContent}
+              >
+                {!!location.description && (
+                  <Text style={[styles.description, { color: C.textMuted }]} numberOfLines={2}>
+                    {location.description}
+                  </Text>
+                )}
 
-          {/* Score ring + metric bars */}
-          <View style={styles.contentRow}>
-            <ScoreRing score={overallScore} />
-            <View style={styles.metricsColumn}>
-              <MetricBar label="Sound" value={location.avg_sound} delay={0} />
-              <MetricBar label="Light" value={location.avg_light} delay={80} />
-              <MetricBar label="Crowd" value={location.avg_crowd} delay={160} />
-            </View>
-          </View>
+                <View style={styles.contentRow}>
+                  <ScoreRing score={overallScore} />
+                  <View style={styles.metricsColumn}>
+                    <MetricBar label="Sound" value={location.avg_sound} delay={0} />
+                    <MetricBar label="Light" value={location.avg_light} delay={80} />
+                    <MetricBar label="Crowd" value={location.avg_crowd} delay={160} />
+                  </View>
+                </View>
 
-          {/* Busyness bar — only when data is available */}
-          {location.googlePlaceId != null && (
-            <BusynessBar
-              score={busyness.score}
-              level={busyness.level}
-              isOpenNow={busyness.isOpenNow}
-              loading={busyness.loading}
-            />
-          )}
+                {location.googlePlaceId != null && (
+                  <BusynessBar
+                    score={busyness.score}
+                    level={busyness.level}
+                    isOpenNow={busyness.isOpenNow}
+                    loading={busyness.loading}
+                  />
+                )}
+              </ScrollView>
 
-          {/* Navigate CTA */}
-          <Pressable
-            style={[styles.navButton, { backgroundColor: C.primary }]}
-            onPress={handleNavigate}
-            accessibilityRole="button"
-            accessibilityLabel={`Navigate to ${location.name}`}
-          >
-            <Ionicons name="navigate" size={18} color={C.bg} />
-            <Text style={[styles.navText, { color: C.bg }]}>Navigate</Text>
-          </Pressable>
+              {/* Navigate CTA — always pinned at bottom */}
+              <Pressable
+                style={[styles.navButton, { backgroundColor: C.accent, shadowColor: C.accent }]}
+                onPress={handleNavigate}
+                accessibilityRole="button"
+                accessibilityLabel={`Navigate to ${location.name}`}
+              >
+                <Ionicons name="navigate" size={18} color="#fff" />
+                <Text style={[styles.navText, { color: '#fff' }]}>Navigate</Text>
+              </Pressable>
+            </Animated.View>
+          </GestureDetector>
         </Animated.View>
-      </GestureDetector>
-    </Animated.View>
+      </View>
+    </Modal>
   );
 }
 
@@ -354,21 +377,19 @@ function BusynessBar({ score, level, isOpenNow, loading }: BusynessBarProps) {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+  },
   sheet: {
     position: 'absolute',
-    bottom: 0,
     left: 0,
     right: 0,
-    paddingBottom: 100,
   },
   sheetInner: {
-    borderTopLeftRadius: Radius.xl,
-    borderTopRightRadius: Radius.xl,
+    borderRadius: Radius.xl,
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.lg,
-    borderTopWidth: 1,
-    borderLeftWidth: 1,
-    borderRightWidth: 1,
+    borderWidth: 1,
   },
   handle: {
     width: 40,
@@ -402,6 +423,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginLeft: Spacing.sm,
     marginTop: 2,
+  },
+  scrollContent: {
+    paddingBottom: Spacing.sm,
   },
   description: {
     fontSize: 13,
@@ -543,6 +567,10 @@ const styles = StyleSheet.create({
     borderRadius: Radius.lg,
     borderCurve: 'continuous',
     paddingVertical: 14,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.28,
+    shadowRadius: 12,
+    elevation: 6,
   },
   navText: {
     fontSize: 15,

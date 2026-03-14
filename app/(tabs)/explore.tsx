@@ -34,25 +34,32 @@ import { Radius, Shadows, Spacing, useColors } from '../../constants/theme';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
-const CATEGORIES = [
-  { key: 'restaurant', label: '🍽️ Restaurants', type: 'restaurant' },
-  { key: 'cafe', label: '☕ Cafes', type: 'cafe' },
-  { key: 'meal_takeaway', label: '🥡 Fast Food', type: 'meal_takeaway' },
+// The 8 most sensory-relevant place types — shown by default
+const PRIMARY_CATEGORIES = [
   { key: 'library', label: '📚 Libraries', type: 'library' },
   { key: 'park', label: '🌳 Parks', type: 'park' },
-  { key: 'shopping_mall', label: '🛍️ Shopping', type: 'shopping_mall' },
-  { key: 'gym', label: '💪 Gyms', type: 'gym' },
-  { key: 'bar', label: '🍸 Bars', type: 'bar' },
-  { key: 'movie_theater', label: '🎬 Theaters', type: 'movie_theater' },
+  { key: 'cafe', label: '☕ Cafes', type: 'cafe' },
+  { key: 'restaurant', label: '🍽️ Restaurants', type: 'restaurant' },
   { key: 'museum', label: '🏛️ Museums', type: 'museum' },
   { key: 'supermarket', label: '🛒 Groceries', type: 'supermarket' },
-  { key: 'gas_station', label: '⛽ Gas', type: 'gas_station' },
   { key: 'pharmacy', label: '💊 Pharmacy', type: 'pharmacy' },
   { key: 'lodging', label: '🏨 Hotels', type: 'lodging' },
+] as const;
+
+// Additional types revealed via "More" toggle
+const EXTRA_CATEGORIES = [
+  { key: 'meal_takeaway', label: '🥡 Fast Food', type: 'meal_takeaway' },
+  { key: 'shopping_mall', label: '🛍️ Shopping', type: 'shopping_mall' },
+  { key: 'movie_theater', label: '🎬 Theaters', type: 'movie_theater' },
+  { key: 'gym', label: '💪 Gyms', type: 'gym' },
+  { key: 'bar', label: '🍸 Bars', type: 'bar' },
+  { key: 'gas_station', label: '⛽ Gas', type: 'gas_station' },
+  { key: 'book_store', label: '📖 Books', type: 'book_store' },
   { key: 'school', label: '🏫 Schools', type: 'school' },
   { key: 'hospital', label: '🏥 Hospital', type: 'hospital' },
-  { key: 'book_store', label: '📖 Books', type: 'book_store' },
-];
+] as const;
+
+const CATEGORIES = [...PRIMARY_CATEGORIES, ...EXTRA_CATEGORIES];
 
 const SORT_OPTIONS = ['distance', 'rating'] as const;
 type SortMode = (typeof SORT_OPTIONS)[number];
@@ -76,11 +83,26 @@ function distanceMiles(lat1: number, lon1: number, lat2: number, lon2: number): 
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
+const LOADING_MESSAGES = [
+  'Looking nearby…',
+  'Checking what\'s around…',
+  'Mapping your surroundings…',
+  'Finding places for you…',
+  'Scanning the area…',
+] as const;
+
 export default function ExploreScreen() {
   const C = useColors();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const hPad = width >= 600 ? Math.max(Spacing.md, (width - 720) / 2) : Spacing.md;
+
+  // Pick a loading message once per mount — changes feel natural without distraction
+  const loadingMessage = useMemo(
+    () => LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   const [userLat, setUserLat] = useState<number | null>(null);
   const [userLng, setUserLng] = useState<number | null>(null);
@@ -90,6 +112,7 @@ export default function ExploreScreen() {
   const [selectedPlace, setSelectedPlace] = useState<PlaceData | null>(null);
 
   // Filters
+  const [showMoreCats, setShowMoreCats] = useState(false);
   const [activeCategories, setActiveCategories] = useState<Set<string>>(new Set([CATEGORIES[0].key]));
   const [sortMode, setSortMode] = useState<SortMode>('distance');
   const [radiusIdx, setRadiusIdx] = useState(1);
@@ -293,9 +316,6 @@ export default function ExploreScreen() {
       {/* ── Header ── */}
       <View style={[styles.header, { paddingTop: insets.top + 8, paddingHorizontal: hPad, backgroundColor: C.bg }]}>
         <Text style={[styles.title, { color: C.text }]}>Explore</Text>
-        <Text style={[styles.subtitle, { color: C.textMuted }]}>
-          Discover sensory-friendly places near you
-        </Text>
 
         {/* Search Bar */}
         <View style={styles.searchWrapper}>
@@ -332,7 +352,7 @@ export default function ExploreScreen() {
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.chipRow}
             >
-              {CATEGORIES.map((cat) => {
+              {(showMoreCats ? CATEGORIES : PRIMARY_CATEGORIES).map((cat) => {
                 const isActive = activeCategories.has(cat.key);
                 return (
                   <TouchableOpacity
@@ -350,6 +370,16 @@ export default function ExploreScreen() {
                   </TouchableOpacity>
                 );
               })}
+              {/* More / Less toggle chip */}
+              <TouchableOpacity
+                onPress={() => setShowMoreCats((s) => !s)}
+                style={[styles.catChip, { backgroundColor: C.surface, borderColor: C.border }]}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.catChipText, { color: C.textMuted }]}>
+                  {showMoreCats ? '− Less' : '+ More'}
+                </Text>
+              </TouchableOpacity>
             </ScrollView>
 
             <View style={styles.filterBar}>
@@ -400,19 +430,19 @@ export default function ExploreScreen() {
       {!searchOpen && loading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={C.accent} />
-          <Text style={[styles.loadingText, { color: C.textMuted }]}>Finding places...</Text>
+          <Text style={[styles.loadingText, { color: C.textMuted }]}>{loadingMessage}</Text>
         </View>
       ) : displayData.length === 0 && !isSearching ? (
         <View style={styles.center}>
-          <Ionicons name="search-outline" size={48} color={C.textDim} />
+          <Ionicons name="search-outline" size={48} color={C.accent} style={{ opacity: 0.4 }} />
           <Text style={[styles.emptyText, { color: C.textMuted }]}>
-            No places found. Try expanding the radius or changing selected categories.
+            Nothing nearby. Try a wider radius or a different category.
           </Text>
         </View>
       ) : displayData.length === 0 && isSearching ? (
         <View style={styles.center}>
-          <Ionicons name="search-outline" size={48} color={C.textDim} />
-          <Text style={[styles.emptyText, { color: C.textMuted }]}>No results yet...</Text>
+          <Ionicons name="search-outline" size={48} color={C.accent} style={{ opacity: 0.4 }} />
+          <Text style={[styles.emptyText, { color: C.textMuted }]}>No matches yet — keep typing.</Text>
         </View>
       ) : (
         <FlatList
@@ -467,9 +497,6 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '800',
     letterSpacing: -0.5,
-  },
-  subtitle: {
-    fontSize: 14,
     marginBottom: 4,
   },
   chipRow: {
