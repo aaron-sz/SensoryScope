@@ -107,6 +107,8 @@ type PlaceResult = {
   name: string;
   formatted_address?: string;
   distance_mi?: number;
+  latitude?: number;
+  longitude?: number;
 };
 
 function distanceMiles(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -197,6 +199,8 @@ export default function SubmitScreen() {
       if (json.results) {
         const enriched: PlaceResult[] = json.results.map((p: any) => ({
           place_id: p.place_id, name: p.name, formatted_address: p.formatted_address,
+          latitude: p.geometry?.location?.lat,
+          longitude: p.geometry?.location?.lng,
           distance_mi: userLat != null && userLng != null && p.geometry?.location
             ? distanceMiles(userLat, userLng, p.geometry.location.lat, p.geometry.location.lng)
             : undefined,
@@ -238,8 +242,8 @@ export default function SubmitScreen() {
       crowd_rating: picks.crowd,
       comment: '',
     });
+    if (error) { setLoading(false); Alert.alert('Submission Failed', 'Your vibe couldn\'t be saved. Please check your connection and try again.'); return; }
     setLoading(false);
-    if (error) { Alert.alert('Submission Failed', 'Your vibe couldn\'t be saved. Please check your connection and try again.'); return; }
 
     const prevCount = prevCountRef.current;
     const newCount = prevCount + 1;

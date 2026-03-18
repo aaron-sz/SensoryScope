@@ -14,7 +14,7 @@
  */
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useEffect } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -31,6 +31,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Radius, Shadows, Spacing, useColors, useScoreColor } from '../constants/theme';
 import { usePlaceBusyness, type BusynessLevel } from '../hooks/usePlaceBusyness';
+import { supabase } from '../lib/supabase';
 
 // ── DisplayLocation type ──────────────────────────────────────────────────────
 export type DisplayLocation = {
@@ -68,9 +69,56 @@ export default function LocationModal({ location, onClose }: Props) {
   // Cap height so the sheet never grows above the safe area top (+ 60px breathing room)
   const maxSheetHeight = height - insets.top - sheetBottom - 60;
 
+  // ── Fetch live sensory scores from place_reviews ──────────────────────────
+  // The passed-in location may have stale/null scores from the locations table.
+  // Query place_reviews directly for the freshest data.
+  const placeId = location.googlePlaceId ?? location.id;
+  const [liveScores, setLiveScores] = useState<{
+    avg_sound: number | null;
+    avg_light: number | null;
+    avg_crowd: number | null;
+    review_count: number;
+  } | null>(null);
+
+  const fetchLiveScores = useCallback(async () => {
+    try {
+      const { data } = await supabase
+        .from('place_reviews')
+        .select('sound_rating, light_rating, crowd_rating')
+        .eq('place_id', placeId);
+
+      if (data && data.length > 0) {
+        const avg = (key: 'sound_rating' | 'light_rating' | 'crowd_rating') => {
+          const vals = data.map((r: any) => r[key]).filter((v: any): v is number => v != null);
+          return vals.length > 0 ? Math.round((vals.reduce((a: number, b: number) => a + b, 0) / vals.length) * 10) / 10 : null;
+        };
+        setLiveScores({
+          avg_sound: avg('sound_rating'),
+          avg_light: avg('light_rating'),
+          avg_crowd: avg('crowd_rating'),
+          review_count: data.length,
+        });
+      }
+    } catch {
+      // Fall back to static scores from location prop
+    }
+  }, [placeId]);
+
+  useEffect(() => {
+    fetchLiveScores();
+  }, [fetchLiveScores]);
+
+  // Use live scores if available, fall back to passed-in location data
+  const scores = {
+    avg_sound: liveScores?.avg_sound ?? location.avg_sound,
+    avg_light: liveScores?.avg_light ?? location.avg_light,
+    avg_crowd: liveScores?.avg_crowd ?? location.avg_crowd,
+    review_count: liveScores?.review_count ?? location.review_count,
+  };
+
   let overallScore: number | null = null;
-  if (location.avg_sound !== null && location.avg_light !== null && location.avg_crowd !== null) {
-    overallScore = (location.avg_sound + location.avg_light + location.avg_crowd) / 3;
+  if (scores.avg_sound !== null && scores.avg_light !== null && scores.avg_crowd !== null) {
+    overallScore = (scores.avg_sound + scores.avg_light + scores.avg_crowd) / 3;
   }
 
   const busyness = usePlaceBusyness(location.googlePlaceId);
@@ -148,7 +196,7 @@ export default function LocationModal({ location, onClose }: Props) {
                     {location.name}
                   </Text>
                   <Text style={[styles.reviewCount, { color: C.textMuted }]}>
-                    {location.review_count ?? 0} sensory rating{location.review_count !== 1 ? 's' : ''}
+                    {scores.review_count ?? 0} sensory rating{scores.review_count !== 1 ? 's' : ''}
                   </Text>
                 </View>
                 <Pressable
@@ -177,9 +225,9 @@ export default function LocationModal({ location, onClose }: Props) {
                 <View style={styles.contentRow}>
                   <ScoreRing score={overallScore} />
                   <View style={styles.metricsColumn}>
-                    <MetricBar label="Sound" value={location.avg_sound} delay={0} />
-                    <MetricBar label="Light" value={location.avg_light} delay={80} />
-                    <MetricBar label="Crowd" value={location.avg_crowd} delay={160} />
+                    <MetricBar label="Sound" value={scores.avg_sound} delay={0} />
+                    <MetricBar label="Light" value={scores.avg_light} delay={80} />
+                    <MetricBar label="Crowd" value={scores.avg_crowd} delay={160} />
                   </View>
                 </View>
 

@@ -18,7 +18,7 @@
 import React, { forwardRef, useMemo } from 'react';
 import { StyleSheet, Text, View, useColorScheme } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
-import { Colors, scoreColor, scoreGlow } from '../constants/theme';
+import { LightColors, DarkColors } from '../constants/theme';
 import { DisplayLocation } from './LocationModal';
 
 type Region = {
@@ -113,16 +113,20 @@ const SensoryMap = forwardRef<MapView, Props>(function SensoryMap(
     >
       {locations
         .filter((loc) => loc.latitude !== 0 || loc.longitude !== 0)
-        .map((loc) => (
-          <Marker
-            key={loc.id}
-            coordinate={{ latitude: loc.latitude, longitude: loc.longitude }}
-            onPress={() => onSelectLocation(loc)}
-            tracksViewChanges={loc.id === selectedId}
-          >
-            <SensoryPin score={loc.avg_sound} isSelected={loc.id === selectedId} />
-          </Marker>
-        ))}
+        .map((loc) => {
+          const scores = [loc.avg_sound, loc.avg_light, loc.avg_crowd].filter((s): s is number => s !== null);
+          const overallScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+          return (
+            <Marker
+              key={loc.id}
+              coordinate={{ latitude: loc.latitude, longitude: loc.longitude }}
+              onPress={() => onSelectLocation(loc)}
+              tracksViewChanges={loc.id === selectedId}
+            >
+              <SensoryPin score={overallScore} name={loc.name} isSelected={loc.id === selectedId} />
+            </Marker>
+          );
+        })}
     </MapView>
   );
 });
@@ -135,10 +139,13 @@ const DOT_SIZE = 20;
 const HALO_SIZE = 34;
 
 const SensoryPin = React.memo(
-  function SensoryPin({ score, isSelected }: { score: number | null; isSelected: boolean }) {
+  function SensoryPin({ score, name, isSelected }: { score: number | null; name: string; isSelected: boolean }) {
+    const isDark = useColorScheme() === 'dark';
+    const C = isDark ? DarkColors : LightColors;
+
     const safeScore = score ?? 5;
-    const color = scoreColor(safeScore);
-    const glow = scoreGlow(safeScore);
+    const color = safeScore <= 3 ? C.calm : safeScore <= 6 ? C.moderate : C.intense;
+    const glow = safeScore <= 3 ? C.calmGlow : safeScore <= 6 ? C.moderateGlow : C.intenseGlow;
 
     return (
       <View style={pinStyles.container} collapsable={false}>
@@ -153,26 +160,31 @@ const SensoryPin = React.memo(
             style={[
               pinStyles.dot,
               { backgroundColor: color },
-              isSelected && { borderWidth: 2.5, borderColor: Colors.elevated },
+              isSelected && { borderWidth: 2.5, borderColor: C.elevated },
             ]}
           />
         </View>
-        <View style={[pinStyles.badge, { borderColor: color }]}>
+        <View style={[pinStyles.badge, { borderColor: color, backgroundColor: C.elevated }]}>
           <Text style={[pinStyles.badgeText, { color }]}>
             {score != null ? Math.round(score) : '?'}
+          </Text>
+        </View>
+        <View style={[pinStyles.nameTag, { backgroundColor: C.elevated, borderColor: C.border }]}>
+          <Text style={[pinStyles.nameText, { color: C.text }]} numberOfLines={1}>
+            {name}
           </Text>
         </View>
       </View>
     );
   },
-  (prev, next) => prev.score === next.score && prev.isSelected === next.isSelected
+  (prev, next) => prev.score === next.score && prev.name === next.name && prev.isSelected === next.isSelected
 );
 
 const pinStyles = StyleSheet.create({
   container: {
     alignItems: 'center',
     minWidth: HALO_SIZE,
-    minHeight: HALO_SIZE + 20,
+    minHeight: HALO_SIZE + 40,
   },
   halo: {
     width: HALO_SIZE,
@@ -201,9 +213,26 @@ const pinStyles = StyleSheet.create({
     paddingVertical: 1,
     borderRadius: 6,
     borderWidth: 1,
-    backgroundColor: Colors.elevated,
   },
   badgeText: { fontSize: 10, fontWeight: '700' },
+  nameTag: {
+    marginTop: 3,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    maxWidth: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  nameText: {
+    fontSize: 9,
+    fontWeight: '600',
+    letterSpacing: 0.1,
+  },
 });
 
 const styles = StyleSheet.create({

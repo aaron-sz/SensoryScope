@@ -48,16 +48,22 @@ export function useMapLocations(): UseMapLocationsResult {
 
       const rows = (data ?? []) as LocationRow[];
 
-      const mapped: DisplayLocation[] = rows
-        .filter(
-          (row) =>
-            row.coords != null &&
-            Array.isArray(row.coords.coordinates) &&
-            row.coords.coordinates.length >= 2 &&
-            typeof row.coords.coordinates[0] === 'number' &&
-            typeof row.coords.coordinates[1] === 'number',
-        )
-        .map((row) => ({
+      // PostGIS may return coords as a JSON string — normalize
+      const mapped: DisplayLocation[] = [];
+      for (const row of rows) {
+        if (row.coords == null) continue;
+        let c: any;
+        try {
+          c = typeof row.coords === 'string' ? JSON.parse(row.coords as unknown as string) : row.coords;
+        } catch { continue; }
+        if (
+          !c ||
+          !Array.isArray(c.coordinates) ||
+          c.coordinates.length < 2 ||
+          typeof c.coordinates[0] !== 'number' ||
+          typeof c.coordinates[1] !== 'number'
+        ) continue;
+        mapped.push({
           id: row.id,
           name: row.name,
           description: row.description ?? undefined,
@@ -65,10 +71,10 @@ export function useMapLocations(): UseMapLocationsResult {
           avg_light: row.avg_light,
           avg_crowd: row.avg_crowd,
           review_count: row.review_count ?? 0,
-          // GeoJSON coords: [longitude, latitude]
-          longitude: row.coords!.coordinates[0],
-          latitude: row.coords!.coordinates[1],
-        }));
+          longitude: c.coordinates[0],
+          latitude: c.coordinates[1],
+        });
+      }
 
       setLocations(mapped);
     } catch (e) {

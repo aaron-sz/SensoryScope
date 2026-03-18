@@ -7,7 +7,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import * as Location from 'expo-location';
-import { C, SPRING_PRESS } from '../constants';
+import { C, SPRING_PRESS } from '../../../constants/onboarding';
 
 const { width: W } = Dimensions.get('window');
 

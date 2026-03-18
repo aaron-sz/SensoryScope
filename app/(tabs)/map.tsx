@@ -54,6 +54,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useFocusEffect } from 'expo-router';
 import LocationModal, { DisplayLocation } from '../../components/LocationModal';
 import MapFAB from '../../components/map/MapFAB';
 import MapHeader from '../../components/map/MapHeader';
@@ -62,10 +63,10 @@ import TrafficLayer from '../../components/map/TrafficLayer';
 import TrafficLegend from '../../components/map/TrafficLegend';
 import TrafficToggle from '../../components/map/TrafficToggle';
 import { MAP_CATEGORIES } from '../../components/map/MapFilterBar';
-import { DarkColors, useColors, } from '../../constants/theme';
-import { useColorScheme } from 'react-native';
+import { DarkColors, useColors } from '../../constants/theme';
 import { useMapCamera } from '../../hooks/useMapCamera';
 import { useNearbyPlaces, type MapPlace } from '../../hooks/useNearbyPlaces';
+import { useSmartLabels } from '../../hooks/useSmartLabels';
 
 // ── Mapbox init ───────────────────────────────────────────────────────────────
 MapboxGL.setAccessToken(process.env.EXPO_PUBLIC_MAPBOX_ACCESS_TOKEN ?? '');
@@ -81,11 +82,14 @@ type OnPressEvent = {
 interface MarkerProps {
   id: string;
   name: string;
+  /** LLM-shortened display name for the map label */
+  displayName: string;
   isRated: 0 | 1;
   scoreColorValue: string;
-  scoreText: string;
   isSelected: 0 | 1;
   category: string;
+  /** Friendly group key for cluster aggregation (dining, shopping, health…) */
+  group: string;
 }
 
 type MarkerFeature = Feature<Point, MarkerProps>;
@@ -100,67 +104,186 @@ function overallScore(place: MapPlace): number | null {
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
 
-function scoreToColor(score: number | null): string {
-  if (score === null) return '#4A5568';
-  if (score <= 3) return DarkColors.calm;
-  if (score <= 6) return DarkColors.moderate;
-  return DarkColors.intense;
+/** Theme-aware score → color. Pass the active color palette. */
+function scoreToColor(score: number | null, colors: typeof DarkColors): string {
+  if (score === null) return colors.textDim;
+  if (score <= 3) return colors.calm;
+  if (score <= 6) return colors.moderate;
+  return colors.intense;
 }
 
-// ── Layer styles (module-level for referential stability) ─────────────────────
-
-const glowStyle: CircleLayerStyle = {
-  circleColor: ['get', 'scoreColorValue'] as unknown as string,
-  circleRadius: ['case', ['==', ['get', 'isSelected'], 1], 38, 0] as unknown as number,
-  circleOpacity: 0.22,
-  circleBlur: 0.9,
+// ── Category → friendly group mapping ────────────────────────────────────────
+const CATEGORY_TO_GROUP: Record<string, string> = {
+  restaurant: 'dining', cafe: 'dining', bar: 'dining', bakery: 'dining',
+  meal_delivery: 'dining', meal_takeaway: 'dining', food: 'dining',
+  store: 'shopping', shopping_mall: 'shopping', supermarket: 'shopping',
+  clothing_store: 'shopping', convenience_store: 'shopping',
+  hospital: 'health', pharmacy: 'health', doctor: 'health',
+  dentist: 'health', health: 'health', veterinary_care: 'health',
+  park: 'outdoors', gym: 'outdoors', stadium: 'outdoors',
+  campground: 'outdoors',
+  movie_theater: 'fun', museum: 'fun', night_club: 'fun',
+  amusement_park: 'fun', bowling_alley: 'fun', aquarium: 'fun',
+  library: 'civic', school: 'civic', university: 'civic',
+  church: 'civic', city_hall: 'civic', courthouse: 'civic',
+  fire_station: 'civic', police: 'civic', post_office: 'civic',
 };
 
-const mainCircleStyle: CircleLayerStyle = {
-  circleColor: [
-    'case',
-    ['==', ['get', 'isRated'], 1],
-    ['get', 'scoreColorValue'],
-    '#4A5568',
-  ] as unknown as string,
-  circleOpacity: [
-    'case', ['==', ['get', 'isRated'], 0], 0.55, 1,
-  ] as unknown as number,
-  circleRadius: ['case', ['==', ['get', 'isSelected'], 1], 20, 14] as unknown as number,
-  circleStrokeWidth: ['case', ['==', ['get', 'isSelected'], 1], 3, 1.5] as unknown as number,
-  circleStrokeColor: '#FFFFFF',
-  circleStrokeOpacity: [
-    'case',
-    ['==', ['get', 'isSelected'], 1], 1,
-    ['==', ['get', 'isRated'], 1], 0.6,
-    0.3,
-  ] as unknown as number,
+function toCategoryGroup(category: string): string {
+  return CATEGORY_TO_GROUP[category] ?? 'services';
+}
+
+// Group keys used for cluster aggregation
+const GROUP_KEYS = ['dining', 'shopping', 'health', 'outdoors', 'fun', 'civic', 'services'] as const;
+const GROUP_LABELS: Record<string, string> = {
+  dining: 'Dining', shopping: 'Shopping', health: 'Health',
+  outdoors: 'Outdoors', fun: 'Entertainment', civic: 'Civic',
+  services: 'Services',
 };
 
-const scoreLabelStyle: SymbolLayerStyle = {
-  textField: ['get', 'scoreText'] as unknown as string,
-  textColor: [
-    'case',
-    ['==', ['get', 'isRated'], 1], '#FFFFFF',
-    'rgba(255,255,255,0.6)',
-  ] as unknown as string,
-  textSize: ['case', ['==', ['get', 'isSelected'], 1], 12, 10] as unknown as number,
-  textFont: ['DIN Pro Bold', 'Arial Unicode MS Bold'],
-  textAllowOverlap: true,
-  textIgnorePlacement: true,
-};
+// ── clusterProperties — count each group within every cluster ────────────────
+const clusterProperties: Record<string, any> = {};
+for (const g of GROUP_KEYS) {
+  clusterProperties[`n_${g}`] = [
+    ['+'],
+    ['case', ['==', ['get', 'group'], g], 1, 0],
+  ];
+}
 
-const nameLabelStyle: SymbolLayerStyle = {
-  textField: ['get', 'name'] as unknown as string,
-  textColor: 'rgba(255,255,255,0.7)',
-  textSize: 10,
-  textOffset: [0, 2.4] as [number, number],
-  textOptional: true,
-  textMaxWidth: 10,
-  textFont: ['DIN Pro Medium', 'Arial Unicode MS Regular'],
-  textHaloColor: 'rgba(0,0,0,0.6)',
-  textHaloWidth: 1,
-};
+// ── Build "dominant group label" Mapbox expression ───────────────────────────
+// Finds which n_* count is highest and returns its friendly label.
+// Requires count > 0 so tied-at-zero groups don't falsely win.
+function buildDominantGroupExpr(): any[] {
+  const keys = GROUP_KEYS.map((g) => `n_${g}`);
+  const cases: any[] = [];
+
+  for (const group of GROUP_KEYS) {
+    const key = `n_${group}`;
+    // This group is dominant if its count > 0 AND strictly >= every other
+    const comparisons = keys
+      .filter((k) => k !== key)
+      .map((other) => ['>=', ['get', key], ['get', other]]);
+    cases.push(['all', ['>', ['get', key], 0], ...comparisons], GROUP_LABELS[group]);
+  }
+  cases.push('Places'); // fallback when all counts are 0 or tied
+  return ['case', ...cases];
+}
+
+const dominantGroupExpr = buildDominantGroupExpr();
+
+// ── Filters ──────────────────────────────────────────────────────────────────
+const unclusteredFilter = ['!', ['has', 'point_count']] as const;
+const clusterFilter = ['has', 'point_count'] as const;
+
+// ── Theme-aware layer style builders ─────────────────────────────────────────
+/** Convert hex (#RRGGBB) to rgba string with given alpha */
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function buildClusterCircleStyle(C: typeof DarkColors): CircleLayerStyle {
+  return {
+    circleColor: hexToRgba(C.accent, 0.5),
+    circleRadius: [
+      'step', ['get', 'point_count'],
+      20, 15, 24, 50, 30,
+    ] as unknown as number,
+    circleStrokeWidth: 1.5,
+    circleStrokeColor: hexToRgba(C.border, 0.25),
+    circleBlur: 0.05,
+  };
+}
+
+function buildClusterLabelStyle(C: typeof DarkColors): SymbolLayerStyle {
+  return {
+    textField: [
+      'concat',
+      ['to-string', ['get', 'point_count']],
+      '\n',
+      dominantGroupExpr,
+    ] as unknown as string,
+    textColor: C.text,
+    textSize: 11,
+    textLineHeight: 1.25,
+    textFont: ['DIN Pro Bold', 'Arial Unicode MS Bold'],
+    textAllowOverlap: true,
+    textIgnorePlacement: true,
+  };
+}
+
+function buildGlowStyle(): CircleLayerStyle {
+  return {
+    circleColor: ['get', 'scoreColorValue'] as unknown as string,
+    circleRadius: ['case', ['==', ['get', 'isSelected'], 1], 28, 0] as unknown as number,
+    circleOpacity: 0.18,
+    circleBlur: 0.8,
+  };
+}
+
+function buildMainCircleStyle(C: typeof DarkColors): CircleLayerStyle {
+  return {
+    circleColor: [
+      'case',
+      ['==', ['get', 'isRated'], 1],
+      ['get', 'scoreColorValue'],
+      C.textDim,
+    ] as unknown as string,
+    circleOpacity: [
+      'case', ['==', ['get', 'isRated'], 0], 0.35, 1,
+    ] as unknown as number,
+    circleRadius: [
+      'case',
+      ['==', ['get', 'isSelected'], 1], 10,
+      ['==', ['get', 'isRated'], 1], 7,
+      5,
+    ] as unknown as number,
+    circleStrokeWidth: [
+      'case',
+      ['==', ['get', 'isSelected'], 1], 2.5,
+      ['==', ['get', 'isRated'], 1], 2,
+      1,
+    ] as unknown as number,
+    circleStrokeColor: hexToRgba(C.text, 0.85),
+    circleStrokeOpacity: [
+      'case',
+      ['==', ['get', 'isSelected'], 1], 1,
+      ['==', ['get', 'isRated'], 1], 0.6,
+      0.15,
+    ] as unknown as number,
+    circleSortKey: [
+      'case', ['==', ['get', 'isRated'], 1], 1, 0,
+    ] as unknown as number,
+  };
+}
+
+function buildNameLabelStyle(C: typeof DarkColors): SymbolLayerStyle {
+  return {
+    textField: ['get', 'displayName'] as unknown as string,
+    textColor: [
+      'case',
+      ['==', ['get', 'isSelected'], 1], C.text,
+      ['==', ['get', 'isRated'], 1], C.textMuted,
+      C.textDim,
+    ] as unknown as string,
+    textSize: [
+      'case',
+      ['==', ['get', 'isSelected'], 1], 12,
+      ['==', ['get', 'isRated'], 1], 10,
+      9,
+    ] as unknown as number,
+    textOffset: [0, 1.2] as [number, number],
+    textAnchor: 'top',
+    textMaxWidth: 7,
+    textFont: ['DIN Pro Medium', 'Arial Unicode MS Regular'],
+    textHaloColor: hexToRgba(C.bg, 0.8),
+    textHaloWidth: 1.4,
+    textAllowOverlap: true,
+    textIgnorePlacement: true,
+  };
+}
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const TAB_BAR_HEIGHT = 90;
@@ -195,6 +318,14 @@ export default function MapScreen() {
     ? 'mapbox://styles/aaronnnn/cmmqhj5yd000401s6bbso6qma'
     : 'mapbox://styles/aaronnnn/cmmqgvnh7006h01qu8qsl4wcy';
   const { cameraRef, flyTo, flyToUser, resetToUser } = useMapCamera();
+  const { getDisplayName } = useSmartLabels();
+
+  // ── Theme-aware map layer styles ──────────────────────────────────────────
+  const clusterCircleStyle = useMemo(() => buildClusterCircleStyle(C), [C]);
+  const clusterLabelStyle = useMemo(() => buildClusterLabelStyle(C), [C]);
+  const glowStyle = useMemo(() => buildGlowStyle(), []);
+  const mainCircleStyle = useMemo(() => buildMainCircleStyle(C), [C]);
+  const nameLabelStyle = useMemo(() => buildNameLabelStyle(C), [C]);
 
   // ── State ───────────────────────────────────────────────────────────────────
   const [userCoords, setUserCoords] = useState<[number, number] | null>(null);
@@ -270,6 +401,7 @@ export default function MapScreen() {
   }, [showTraffic]);
 
   // ── Filter places by active category ──────────────────────────────────────
+  // Clustering handles density — no need to hide places by zoom level
   const filteredPlaces = useMemo(() => {
     if (activeFilter === 'all') return places;
     const cat = MAP_CATEGORIES.find((c) => c.key === activeFilter);
@@ -279,18 +411,28 @@ export default function MapScreen() {
 
   // ── Build GeoJSON FeatureCollection ───────────────────────────────────────
   const geoJSON = useMemo<MarkerCollection>(() => {
+    const rated = filteredPlaces.filter((p) => p.isRated);
+    if (rated.length > 0) {
+      console.log(`[Map GeoJSON] ${rated.length} rated places:`, rated.map((p) => ({
+        name: p.name, sound: p.avg_sound, light: p.avg_light, crowd: p.avg_crowd,
+        score: overallScore(p), color: scoreToColor(overallScore(p), C),
+      })));
+    }
     const features: MarkerFeature[] = filteredPlaces.map((place) => {
       const score = overallScore(place);
-      const color = scoreToColor(score);
-      const scoreText = place.isRated && score != null ? String(Math.round(score)) : '?';
+      // Rated places with no scores yet get accent color instead of gray
+      const color = place.isRated && score === null
+        ? C.accent
+        : scoreToColor(score, C);
       const props: MarkerProps = {
         id: place.id,
         name: place.name,
+        displayName: getDisplayName(place.name),
         isRated: place.isRated ? 1 : 0,
         scoreColorValue: color,
-        scoreText,
         isSelected: selectedPlace?.id === place.id ? 1 : 0,
         category: place.category,
+        group: toCategoryGroup(place.category),
       };
       return {
         type: 'Feature' as const,
@@ -303,14 +445,25 @@ export default function MapScreen() {
       };
     });
     return { type: 'FeatureCollection' as const, features };
-  }, [filteredPlaces, selectedPlace?.id]);
+  }, [filteredPlaces, selectedPlace?.id, getDisplayName, C]);
 
   // ── Handlers ──────────────────────────────────────────────────────────────
   const handleMarkerPress = useCallback(
     (event: OnPressEvent) => {
       const feature = event.features[0];
       if (!feature?.properties) return;
-      const id = (feature.properties as GeoJsonProperties & { id?: string }).id;
+      const props = feature.properties as GeoJsonProperties;
+
+      // If user tapped a cluster, zoom into it smoothly
+      if (props?.cluster === true || props?.point_count != null) {
+        const coords = (feature.geometry as Point).coordinates as [number, number];
+        const currentZoom = lastCameraRef.current?.zoom ?? 13;
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        flyTo(coords, Math.min(currentZoom + 2.5, 17), 800, 0);
+        return;
+      }
+
+      const id = (props as GeoJsonProperties & { id?: string })?.id;
       if (!id) return;
       const found = filteredPlaces.find((p) => p.id === id);
       if (!found) return;
@@ -347,16 +500,15 @@ export default function MapScreen() {
     setShowTraffic((prev) => !prev);
   }, []);
 
-  // ── Auto-fetch on pan ──────────────────────────────────────────────────────
+  // ── Auto-fetch on pan (onMapIdle) ───────────────────────────────────────────
   const handleRegionDidChange = useCallback(
-    (event: any) => {
-      // Always track the latest camera center+zoom for restore-on-close
-      const [lng, lat] = event.geometry.coordinates as [number, number];
-      const zoom = event.properties?.zoomLevel ?? 13;
+    (state: any) => {
+      // onMapIdle provides MapState: { properties: { center, zoom, ... }, gestures }
+      const center = state.properties?.center;
+      const zoom = state.properties?.zoom ?? 13;
+      if (!center || !Array.isArray(center) || center.length < 2) return;
+      const [lng, lat] = center as [number, number];
       lastCameraRef.current = { center: [lng, lat], zoom };
-
-      // Ignore programmatic camera moves for the pan-fetch logic
-      if (!event.properties?.isUserInteraction) return;
 
       // Debounce — reset timer each time the region changes
       if (panFetchTimerRef.current) clearTimeout(panFetchTimerRef.current);
@@ -385,6 +537,15 @@ export default function MapScreen() {
       : [];
     refetch();
   }, [refetch, userCoords]);
+
+  // ── Refresh Supabase data when tab regains focus (e.g. after submitting a review)
+  const isFirstFocus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (isFirstFocus.current) { isFirstFocus.current = false; return; }
+      refetch();
+    }, [refetch]),
+  );
 
   // ── Derived values ─────────────────────────────────────────────────────────
   const ratedCount = useMemo(
@@ -435,7 +596,7 @@ export default function MapScreen() {
         logoEnabled={false}
         compassEnabled
         compassPosition={{ top: compassTop, right: 16 }}
-        onRegionDidChange={handleRegionDidChange}
+        onMapIdle={handleRegionDidChange}
       >
         <Camera
           ref={cameraRef}
@@ -456,11 +617,19 @@ export default function MapScreen() {
             shape={geoJSON}
             onPress={handleMarkerPress}
             hitbox={{ width: 44, height: 44 }}
+            cluster
+            clusterRadius={50}
+            clusterMaxZoomLevel={15}
+            clusterProperties={clusterProperties}
           >
-            <CircleLayer id="glow-layer" style={glowStyle} />
-            <CircleLayer id="main-circle" style={mainCircleStyle} />
-            <SymbolLayer id="score-label" style={scoreLabelStyle} />
-            <SymbolLayer id="name-label" style={nameLabelStyle} />
+            {/* ── Cluster: frosted bubble + smart label ──────── */}
+            <CircleLayer id="cluster-circle" style={clusterCircleStyle} filter={clusterFilter} />
+            <SymbolLayer id="cluster-label" style={clusterLabelStyle} filter={clusterFilter} />
+
+            {/* ── Individual: small dot + name ───────────────── */}
+            <CircleLayer id="glow-layer" style={glowStyle} filter={unclusteredFilter} />
+            <CircleLayer id="main-circle" style={mainCircleStyle} filter={unclusteredFilter} />
+            <SymbolLayer id="name-label" style={nameLabelStyle} filter={unclusteredFilter} />
           </ShapeSource>
         )}
       </MapView>

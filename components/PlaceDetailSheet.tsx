@@ -112,17 +112,19 @@ export default function PlaceDetailSheet({ place, onClose }: Props) {
 
         if (error) {
             Alert.alert('Submission Failed', 'Your review couldn\'t be saved. Please try again.');
-        } else {
-            setShowReviewForm(false);
-            setNoise(null);
-            setLight(null);
-            setCrowd(null);
-            setComment('');
-            Keyboard.dismiss();
-            setReviewThanks(true);
-            setTimeout(() => setReviewThanks(false), 2800);
-            fetchReviews();
+            setSubmitting(false);
+            return;
         }
+
+        setShowReviewForm(false);
+        setNoise(null);
+        setLight(null);
+        setCrowd(null);
+        setComment('');
+        Keyboard.dismiss();
+        setReviewThanks(true);
+        setTimeout(() => setReviewThanks(false), 2800);
+        fetchReviews();
         setSubmitting(false);
     };
 

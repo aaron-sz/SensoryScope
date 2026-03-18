@@ -1,6 +1,6 @@
 import { Dimensions } from 'react-native';
 import { useSharedValue, useAnimatedStyle, withSpring } from 'react-native-reanimated';
-import { SPRING_NAV } from '../constants';
+import { SPRING_NAV } from '../constants/onboarding';
 
 export const SCREEN_WIDTH = Dimensions.get('window').width;
 

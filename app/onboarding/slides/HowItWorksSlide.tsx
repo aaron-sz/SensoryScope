@@ -7,7 +7,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
-import { C } from '../constants';
+import { C } from '../../../constants/onboarding';
 
 const { width: W } = Dimensions.get('window');
 

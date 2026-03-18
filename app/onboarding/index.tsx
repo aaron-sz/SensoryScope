@@ -11,10 +11,10 @@ import Animated, {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
-import { C, SLIDES_COUNT, SPRING_PRESS } from './constants';
+import { C, SLIDES_COUNT, SPRING_PRESS } from '../../constants/onboarding';
 
 const ONBOARDING_KEY = 'sensoryscope_onboarding_v1';
-import { useSlideAnimation } from './hooks/useSlideAnimation';
+import { useSlideAnimation } from '../../hooks/useSlideAnimation';
 import WelcomeSlide from './slides/WelcomeSlide';
 import WhatIsSlide from './slides/WhatIsSlide';
 import HowItWorksSlide from './slides/HowItWorksSlide';

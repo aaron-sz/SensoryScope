@@ -8,7 +8,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { C, PREFERENCES, SPRING_PRESS, type PreferenceId } from '../constants';
+import { C, PREFERENCES, SPRING_PRESS, type PreferenceId } from '../../../constants/onboarding';
 
 const { width: W } = Dimensions.get('window');
 

@@ -11,7 +11,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
-import { C, SPRING_PRESS } from '../constants';
+import { C, SPRING_PRESS } from '../../../constants/onboarding';
 
 const { width: W } = Dimensions.get('window');
 
