@@ -49,8 +49,6 @@ export default function LoginScreen() {
             const msg = error.message.toLowerCase();
             if (msg.includes('invalid login credentials') || msg.includes('invalid email or password')) {
                 Alert.alert('Incorrect Credentials', 'Email or password is incorrect. Please try again.');
-            } else if (msg.includes('email not confirmed')) {
-                Alert.alert('Email Not Confirmed', 'Check your inbox and confirm your email before signing in.');
             } else if (msg.includes('too many requests') || msg.includes('rate limit')) {
                 Alert.alert('Too Many Attempts', 'Please wait a moment before trying again.');
             } else {

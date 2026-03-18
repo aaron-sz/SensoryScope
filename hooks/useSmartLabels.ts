@@ -1,9 +1,9 @@
 /**
- * useSmartLabels — On-device LLM-powered place name shortener
+ * useSmartLabels — AI-powered place name shortener
  *
- * Uses SmolLM2 (135M quantized) via react-native-executorch to intelligently
- * shorten long place names for clean map labels. A fast heuristic provides
- * instant results while the LLM processes batches in the background.
+ * Uses OpenAI's gpt-4o-mini to intelligently shorten long place names for
+ * clean map labels. A fast heuristic provides instant results while the API
+ * processes batches in the background.
  *
  * Example transformations:
  *   "Huntersville Family Medical Center"  →  "Medical Center"
@@ -11,21 +11,18 @@
  *   "Starbucks Coffee Drive-Thru"         →  "Starbucks"
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import Constants from 'expo-constants';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 /** Names at or below this length are already short enough */
 const SHORT_ENOUGH = 16;
-/** How many names to send to the LLM in one prompt */
-const BATCH_SIZE = 15;
+/** How many names to send to the API in one prompt */
+const BATCH_SIZE = 30;
 /** Delay before processing the next batch (let the UI breathe) */
-const BATCH_COOLDOWN_MS = 300;
+const BATCH_COOLDOWN_MS = 200;
 
-// LLMModule is dynamically imported — use `any` for the ref type
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type LLMModuleInstance = any;
+const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY ?? '';
 
-// ── Quick heuristic shortener (instant, no LLM) ─────────────────────────────
+// ── Quick heuristic shortener (instant, no API) ─────────────────────────────
 const FILLER = /\b(The|of|and|at|in|on|by|for|a|an)\b/gi;
 const TRAILING_GENERIC = /\s+(Center|Centre|Place|Plaza|Complex|Building|Bldg|Suite|Ste|Inc|LLC|Corp|Location|Branch|Outlet|Express|Station)$/i;
 
@@ -49,58 +46,24 @@ export function useSmartLabels() {
   const cache = useRef<Map<string, string>>(new Map());
   const queue = useRef<Set<string>>(new Set());
   const processingRef = useRef(false);
-  const llmRef = useRef<LLMModuleInstance | null>(null);
 
   const [isModelReady, setIsModelReady] = useState(false);
-  const [downloadProgress, setDownloadProgress] = useState(0);
-  // Bumped when LLM results arrive so consumers re-render with better names
+  // Bumped when API results arrive so consumers re-render with better names
   const [revision, setRevision] = useState(0);
 
-  // ── Load LLM on mount (skip in Expo Go — native modules unavailable) ──────
+  // ── Mark ready on mount if API key is configured ────────────────────────
   useEffect(() => {
-    // Expo Go can't run native modules — LLM requires a custom dev build.
-    // The react-native-executorch package throws an ERROR at import time when
-    // native modules aren't linked. That console error is unavoidable in Expo Go
-    // but doesn't crash the app — the heuristic shortener handles everything.
-    if (Constants.executionEnvironment === 'storeClient') {
-      console.log('[SmartLabels] Expo Go — using heuristic (LLM needs dev build)');
-      return;
+    if (OPENAI_API_KEY) {
+      setIsModelReady(true);
+      console.log('[SmartLabels] OpenAI gpt-4o-mini ready');
+    } else {
+      console.log('[SmartLabels] No EXPO_PUBLIC_OPENAI_API_KEY — using heuristic shortener');
     }
-
-    let cancelled = false;
-    let module: any = null;
-
-    (async () => {
-      try {
-        const { LLMModule, SMOLLM2_1_135M_QUANTIZED } = require('react-native-executorch');
-        if (cancelled) return;
-
-        module = new LLMModule({});
-        llmRef.current = module;
-
-        await module.load(SMOLLM2_1_135M_QUANTIZED, (progress: number) => {
-          if (!cancelled) setDownloadProgress(progress);
-        });
-
-        if (!cancelled) {
-          setIsModelReady(true);
-          console.log('[SmartLabels] LLM loaded — SmolLM2 135M ready');
-        }
-      } catch {
-        // Native module not linked or model load failed — heuristic fallback is fine
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-      try { module?.delete(); } catch { /* noop */ }
-      llmRef.current = null;
-    };
   }, []);
 
-  // ── Process batches in background ──────────────────────────────────────────
+  // ── Process batches via OpenAI API ──────────────────────────────────────
   const processBatch = useCallback(async () => {
-    if (processingRef.current || !isModelReady || !llmRef.current) return;
+    if (processingRef.current || !isModelReady || !OPENAI_API_KEY) return;
     if (queue.current.size === 0) return;
 
     processingRef.current = true;
@@ -115,18 +78,39 @@ export function useSmartLabels() {
 
     try {
       const numbered = batch.map((n, i) => `${i + 1}. ${n}`).join('\n');
-      const result = await llmRef.current.generate([
-        {
-          role: 'system',
-          content:
-            'You shorten place names to 1-3 words. Keep the most recognizable word. ' +
-            'Reply with ONLY the shortened names, one per line. No numbers, no punctuation, no explanations.',
+
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
         },
-        {
-          role: 'user',
-          content: `Shorten each name:\n${numbered}`,
-        },
-      ]);
+        body: JSON.stringify({
+          model: 'gpt-4o-mini',
+          temperature: 0,
+          max_tokens: 400,
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You shorten place names to 1-3 words. Keep the most recognizable word. ' +
+                'Reply with ONLY the shortened names, one per line, in the same order. ' +
+                'No numbers, no punctuation, no explanations.',
+            },
+            {
+              role: 'user',
+              content: `Shorten each name:\n${numbered}`,
+            },
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`OpenAI API ${response.status}`);
+      }
+
+      const data = await response.json();
+      const result: string = data.choices?.[0]?.message?.content ?? '';
 
       // Parse response — one shortened name per line
       const lines = result
@@ -147,7 +131,7 @@ export function useSmartLabels() {
           cache.current.set(original, shortened);
           updated = true;
         } else {
-          // LLM result wasn't good — cache the heuristic so we don't retry
+          // API result wasn't good — cache the heuristic so we don't retry
           cache.current.set(original, quickShorten(original));
         }
       });
@@ -168,17 +152,17 @@ export function useSmartLabels() {
     }
   }, [isModelReady]);
 
-  // Kick off processing when model becomes ready
+  // Kick off processing when ready and queue has items
   useEffect(() => {
     if (isModelReady && queue.current.size > 0) processBatch();
   }, [isModelReady, processBatch]);
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
-  /** Get the best available short name (cached LLM result → heuristic → original) */
+  /** Get the best available short name (cached API result → heuristic → original) */
   const getDisplayName = useCallback(
     (name: string): string => {
-      // Force dependency on revision so consumers re-render when LLM results arrive
+      // Force dependency on revision so consumers re-render when API results arrive
       void revision;
 
       if (name.length <= SHORT_ENOUGH) return name;
@@ -186,7 +170,7 @@ export function useSmartLabels() {
       const cached = cache.current.get(name);
       if (cached) return cached;
 
-      // Queue for LLM processing
+      // Queue for API processing
       queue.current.add(name);
       if (isModelReady && !processingRef.current) {
         // Kick off async — don't await
@@ -202,8 +186,8 @@ export function useSmartLabels() {
   return {
     getDisplayName,
     isModelReady,
-    downloadProgress,
-    /** How many names the LLM has processed so far */
+    downloadProgress: 1, // No download needed — keep interface compatible
+    /** How many names the API has processed so far */
     processedCount: cache.current.size,
   };
 }

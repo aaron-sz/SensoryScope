@@ -10,7 +10,27 @@
       "Read(//c/Program Files/Android/Android Studio/jbr/**)",
       "Read(//c/Program Files/Android/Android Studio/**)",
       "Bash(find \"C:\\\\Users\\\\AaronDev\\\\OneDrive\\\\Documents\\\\ReadySetApp\\\\SensoryScope\" -type f -name \"*.tsx\" -o -name \"*.ts\" -o -name \"*.json\" | grep -E \"\\\\.\\(tsx|ts|json\\)$\" | head -50)",
-      "Bash(find \"C:\\\\Users\\\\AaronDev\\\\OneDrive\\\\Documents\\\\ReadySetApp\\\\SensoryScope\" -type f -name \"*DesignSystem*\" -o -name \"*design*\" -o -name \"*theme*\" 2>/dev/null | grep -i \"\\\\.ts\\\\|\\\\.tsx\")"
+      "Bash(find \"C:\\\\Users\\\\AaronDev\\\\OneDrive\\\\Documents\\\\ReadySetApp\\\\SensoryScope\" -type f -name \"*DesignSystem*\" -o -name \"*design*\" -o -name \"*theme*\" 2>/dev/null | grep -i \"\\\\.ts\\\\|\\\\.tsx\")",
+      "WebSearch",
+      "WebFetch(domain:docs.swmansion.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:www.npmjs.com)",
+      "Bash(find:*)",
+      "Bash(cd:*)",
+      "Bash(grep:*)",
+      "Bash(android/gradlew.bat -p android app:assembleDebug -x lint -x test --configure-on-demand --build-cache -PreactNativeDevServerPort=8081 -PreactNativeArchitectures=x86_64)",
+      "Bash(python -m json.tool)",
+      "Bash(ls node_modules/react-native-executorch/plugin*)",
+      "Bash(ls node_modules/react-native-executorch/*.json)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''version''''\\)\\); print\\(''''peerDeps:'''', json.dumps\\(d.get\\(''''peerDependencies'''',{}\\), indent=2\\)\\)\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); deps=d.get\\(''''dependencies'''',{}\\); print\\(''''expo:'''', deps.get\\(''''expo''''\\)\\); print\\(''''react-native:'''', deps.get\\(''''react-native''''\\)\\)\")",
+      "Bash(npx expo-autolinking:*)",
+      "Bash(npx react-native:*)",
+      "Bash(python -c \":*)",
+      "Bash(powershell -Command \"Get-WindowsDeveloperLicense | Select-Object IsValid\")",
+      "Bash(powershell -Command \"\\(Get-ItemProperty HKLM:\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\AppModelUnlock -Name AllowDevelopmentWithoutDevLicense -ErrorAction SilentlyContinue\\).AllowDevelopmentWithoutDevLicense\")",
+      "Bash(powershell -Command \"reg query 'HKLM\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\AppModelUnlock' /v AllowDevelopmentWithoutDevLicense 2>&1\")",
+      "Bash(android/gradlew.bat -p android clean)"
     ]
   }
 }

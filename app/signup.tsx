@@ -77,7 +77,7 @@ export default function SignupScreen() {
             }
         } else {
             // Note: Profile creation is handled automatically by the Supabase database trigger
-            Alert.alert('Account Created!', 'Welcome to SensoryScope. Check your email if verification is required.');
+            Alert.alert('Account Created!', 'Welcome to SensoryScope. We hope you enjoy!');
             router.replace('/(tabs)' as any);
         }
 

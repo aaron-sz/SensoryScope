@@ -87,17 +87,17 @@ export function useNearbyPlaces(
         if (isInitial || ratingsCache.current.size === 0) {
           const ratings = await fetchAggregatedRatings();
           ratingsCache.current = ratings;
-          console.log(
-            `[useNearbyPlaces] Reviews: ${ratings.size} rated places from place_reviews`,
-          );
+          // console.log(
+          //   `[useNearbyPlaces] Reviews: ${ratings.size} rated places from place_reviews`,
+          // );
         }
 
         const googlePlaces = await fetchGooglePlaces(lat, lng, radiusMeters);
         const merged = mergePlaces(googlePlaces, ratingsCache.current);
         const rated = merged.filter((p) => p.isRated);
-        console.log(
-          `[useNearbyPlaces] Google: ${googlePlaces.length}, merged: ${merged.length}, rated: ${rated.length}`,
-        );
+        // console.log(
+        //   `[useNearbyPlaces] Google: ${googlePlaces.length}, merged: ${merged.length}, rated: ${rated.length}`,
+        // );
 
         // Merge into cache — update existing entries too (scores may have changed)
         for (const place of merged) {

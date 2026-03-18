@@ -152,9 +152,9 @@ export default function SubmitScreen() {
   // Progressive subtitle copy — encourages without being loud
   const SUBTITLE_COPY = [
     'Tap a dot to start rating',
-    'Nice — 2 more to go',
-    'Almost there — one more',
-    'All set — submit when ready',
+    'Nice! 2 More To Go',
+    'Almost there! One More',
+    'All Set :D Submit When Ready',
   ] as const;
   const subtitleCopy = SUBTITLE_COPY[ratedCount];
 
@@ -319,7 +319,7 @@ export default function SubmitScreen() {
       {/* Floating submit */}
       {allPicked && (
         <Animated.View
-          entering={FadeInUp.springify().damping(22).stiffness(300)}
+          entering={FadeInUp.springify().damping(55).stiffness(300)}
           exiting={FadeOut.duration(180)}
           style={[styles.submitWrap, { paddingBottom: Math.max(insets.bottom, Spacing.md) + 72, paddingHorizontal: hPad }]}
         >
@@ -486,14 +486,14 @@ const CategoryCard = React.memo(function CategoryCard({
         <View style={styles.valueBox}>
           <Animated.Text
             key={`n-${category.key}-${selected}-${step}`}
-            entering={FadeInDown.duration(160)}
+            entering={FadeInDown.duration(300)}
             style={[styles.valueNum, { color: selected !== null ? color : C.border }]}
           >
             {emoji ? `${emoji} ${selected}` : (selected ?? '—')}
           </Animated.Text>
           <Animated.Text
             key={`w-${category.key}-${selected}`}
-            entering={FadeInDown.duration(180).delay(20)}
+            entering={FadeInDown.duration(300).delay(20)}
             style={[styles.valueWord, { color: selected !== null ? color : C.textDim }]}
           >
             {word?.toUpperCase() ?? 'TAP BELOW'}
