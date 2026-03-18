@@ -3,11 +3,11 @@ import { Dimensions, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
+  withDelay,
   withTiming,
 } from 'react-native-reanimated';
 import * as Location from 'expo-location';
-import { C, SPRING_PRESS } from '../../../constants/onboarding';
+import { C } from '../../../constants/onboarding';
 
 const { width: W } = Dimensions.get('window');
 
@@ -18,119 +18,112 @@ interface Props {
 
 export default function PermissionsSlide({ height, isActive }: Props) {
   const [status, setStatus] = useState<'idle' | 'granted' | 'denied'>('idle');
-  const btnScale = useSharedValue(1);
-  const pingScale = useSharedValue(1);
-  const contentY = useSharedValue(28);
+
   const contentOp = useSharedValue(0);
+  const contentY = useSharedValue(24);
+  const btnOp = useSharedValue(0);
+  const btnY = useSharedValue(16);
 
   useEffect(() => {
     if (isActive) {
-      contentY.value = withSpring(0, { damping: 18, stiffness: 130 });
-      contentOp.value = withTiming(1, { duration: 350 });
+      contentOp.value = withTiming(1, { duration: 400 });
+      contentY.value = withTiming(0, { duration: 400 });
+      btnOp.value = withDelay(250, withTiming(1, { duration: 350 }));
+      btnY.value = withDelay(250, withTiming(0, { duration: 350 }));
     } else {
-      contentY.value = 28;
       contentOp.value = 0;
+      contentY.value = 24;
+      btnOp.value = 0;
+      btnY.value = 16;
     }
   }, [isActive]);
 
-  const contentAnimStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: contentY.value }],
-    opacity: contentOp.value,
-  }));
-
-  const btnAnimStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: btnScale.value }],
-  }));
-
-  // Ping animation — only runs when slide is visible
+  // Auto-prompt location when slide becomes active
   useEffect(() => {
-    if (!isActive) return;
-    const interval = setInterval(() => {
-      pingScale.value = withSpring(1.18, { damping: 8, stiffness: 80 }, () => {
-        pingScale.value = withSpring(1, { damping: 10, stiffness: 100 });
-      });
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [isActive]);
+    if (!isActive || status !== 'idle') return;
+    let cancelled = false;
 
-  const pingStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: pingScale.value }],
-    opacity: 2 - pingScale.value,
+    const timer = setTimeout(async () => {
+      try {
+        const { status: s } = await Location.requestForegroundPermissionsAsync();
+        if (cancelled) return;
+        setStatus(s === 'granted' ? 'granted' : 'denied');
+      } catch {
+        if (!cancelled) setStatus('denied');
+      }
+    }, 600);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [isActive, status]);
+
+  const contentAnim = useAnimatedStyle(() => ({
+    opacity: contentOp.value,
+    transform: [{ translateY: contentY.value }],
   }));
 
-  async function handleGrant() {
-    btnScale.value = withSpring(0.96, SPRING_PRESS, () => {
-      btnScale.value = withSpring(1, SPRING_PRESS);
-    });
+  const btnAnim = useAnimatedStyle(() => ({
+    opacity: btnOp.value,
+    transform: [{ translateY: btnY.value }],
+  }));
+
+  async function handleRetry() {
     const { status: s } = await Location.requestForegroundPermissionsAsync();
     setStatus(s === 'granted' ? 'granted' : 'denied');
   }
 
   return (
     <View style={[styles.slide, { width: W, height }]}>
-      {/* BG decoration */}
-      <View style={styles.bgBlob} />
+      <View style={styles.content}>
+        <Animated.View style={contentAnim}>
+          <Text style={styles.eyebrow}>Location</Text>
+          <Text style={styles.heading}>
+            {status === 'granted' ? 'You\'re on\nthe map.' : 'Find places\nnear you.'}
+          </Text>
+          <Text style={styles.body}>
+            {status === 'granted'
+              ? 'We\'ll show sensory-rated places around your current location.'
+              : status === 'denied'
+                ? 'No worries — you can enable location later in your device settings.'
+                : 'We need your location to find nearby places. It\'s never stored or shared.'}
+          </Text>
+        </Animated.View>
 
-      <Animated.View style={[styles.content, contentAnimStyle]}>
-        {/* Illustration */}
-        <View style={styles.illustrationWrap}>
-          <Animated.View style={[styles.pingRing, styles.pingRingOuter, pingStyle]} />
-          <View style={styles.pingRing} />
-          <View style={styles.iconCircle}>
-            <Text style={styles.iconEmoji}>📍</Text>
-          </View>
-        </View>
+        {/* Status indicator */}
+        <Animated.View style={btnAnim}>
+          {status === 'granted' && (
+            <View style={styles.statusRow}>
+              <View style={[styles.statusDot, { backgroundColor: C.primary }]} />
+              <Text style={[styles.statusText, { color: C.primary }]}>Location enabled</Text>
+            </View>
+          )}
 
-        <Text style={styles.heading}>
-          {status === 'granted' ? 'Location enabled!' : 'Find places near you'}
-        </Text>
-
-        <Text style={styles.desc}>
-          {status === 'granted'
-            ? "You're all set. We'll show sensory-friendly places around you."
-            : "We use your location to show sensory-friendly places nearby. Your location is never shared or stored."}
-        </Text>
-
-        {status === 'idle' && (
-          <>
-            <Pressable
-              onPressIn={() => { btnScale.value = withSpring(0.96, SPRING_PRESS); }}
-              onPressOut={() => { btnScale.value = withSpring(1, SPRING_PRESS); }}
-              onPress={handleGrant}
-              accessibilityLabel="Enable location access"
-              accessibilityRole="button"
-            >
-              <Animated.View style={[styles.grantBtn, btnAnimStyle]}>
-                <Text style={styles.grantBtnText}>📍  Enable Location</Text>
-              </Animated.View>
+          {status === 'denied' && (
+            <Pressable onPress={handleRetry}>
+              <View style={styles.retryBtn}>
+                <Text style={styles.retryText}>Try again</Text>
+              </View>
             </Pressable>
+          )}
 
-            <Text style={styles.skipHint}>
-              You can enable this later in settings
-            </Text>
-          </>
-        )}
-
-        {status === 'granted' && (
-          <View style={styles.grantedBadge}>
-            <Text style={styles.grantedText}>✓  Location access granted</Text>
-          </View>
-        )}
-
-        {status === 'denied' && (
-          <View style={styles.deniedNote}>
-            <Text style={styles.deniedText}>
-              No problem — you can enable location in your device settings anytime.
-            </Text>
-          </View>
-        )}
+          {status === 'idle' && (
+            <View style={styles.statusRow}>
+              <View style={[styles.statusDot, { backgroundColor: C.textDim }]} />
+              <Text style={[styles.statusText, { color: C.textDim }]}>Requesting access…</Text>
+            </View>
+          )}
+        </Animated.View>
 
         {/* Privacy note */}
-        <View style={styles.privacyRow}>
-          <Text style={styles.privacyIcon}>🔒</Text>
-          <Text style={styles.privacyText}>Your location is private. We never sell your data.</Text>
-        </View>
-      </Animated.View>
+        <Animated.View style={[styles.privacyWrap, contentAnim]}>
+          <View style={styles.privacyLine} />
+          <Text style={styles.privacyText}>
+            Your location stays on your device. We never sell or share your data.
+          </Text>
+        </Animated.View>
+      </View>
     </View>
   );
 }
@@ -140,144 +133,79 @@ const styles = StyleSheet.create({
     backgroundColor: C.bg,
     overflow: 'hidden',
   },
-  bgBlob: {
-    position: 'absolute',
-    bottom: -80,
-    right: -80,
-    width: 280,
-    height: 280,
-    borderRadius: 9999,
-    backgroundColor: C.primary,
-    opacity: 0.05,
-  },
   content: {
     flex: 1,
     paddingHorizontal: 28,
-    alignItems: 'center',
     justifyContent: 'center',
   },
-  illustrationWrap: {
-    width: 120,
-    height: 120,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 36,
-  },
-  pingRing: {
-    position: 'absolute',
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    borderWidth: 2,
-    borderColor: C.primary,
-    opacity: 0.18,
-  },
-  pingRingOuter: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    opacity: 0.1,
-  },
-  iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
-    backgroundColor: C.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: C.primary,
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.38,
-    shadowRadius: 24,
-    elevation: 14,
-  },
-  iconEmoji: {
-    fontSize: 36,
+  eyebrow: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: C.primary,
+    letterSpacing: 0.4,
+    marginBottom: 10,
+    textTransform: 'uppercase',
   },
   heading: {
-    fontSize: 28,
+    fontSize: 32,
     fontWeight: '800',
     color: C.text,
-    textAlign: 'center',
-    letterSpacing: -0.5,
-    lineHeight: 36,
-    marginBottom: 14,
+    letterSpacing: -0.8,
+    lineHeight: 40,
+    marginBottom: 12,
   },
-  desc: {
+  body: {
     fontSize: 15,
     color: C.textLight,
-    textAlign: 'center',
-    lineHeight: 24,
+    lineHeight: 23,
     marginBottom: 32,
-    paddingHorizontal: 8,
   },
-  grantBtn: {
-    backgroundColor: C.primary,
-    paddingVertical: 16,
-    paddingHorizontal: 48,
-    borderRadius: 50,
-    shadowColor: C.primary,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.38,
-    shadowRadius: 20,
-    elevation: 10,
-    marginBottom: 16,
+
+  // Status
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 40,
   },
-  grantBtnText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: C.white,
-    letterSpacing: 0.2,
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
-  skipHint: {
-    fontSize: 13,
-    color: C.textDim,
-    textAlign: 'center',
-    marginBottom: 24,
+  statusText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
-  grantedBadge: {
-    backgroundColor: C.primaryPale,
-    paddingHorizontal: 20,
+
+  // Retry
+  retryBtn: {
+    alignSelf: 'flex-start',
+    borderWidth: 1.5,
+    borderColor: C.primary,
     paddingVertical: 12,
-    borderRadius: 12,
-    marginBottom: 24,
+    paddingHorizontal: 28,
+    borderRadius: 10,
+    marginBottom: 40,
   },
-  grantedText: {
-    fontSize: 14,
+  retryText: {
+    fontSize: 15,
     fontWeight: '600',
     color: C.primary,
   },
-  deniedNote: {
-    backgroundColor: C.accentPale,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 12,
-    marginBottom: 24,
+
+  // Privacy
+  privacyWrap: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.border,
+    paddingTop: 16,
   },
-  deniedText: {
-    fontSize: 13,
-    color: '#92400E',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  privacyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: C.card,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: C.border,
-  },
-  privacyIcon: {
-    fontSize: 14,
+  privacyLine: {
+    display: 'none',
   },
   privacyText: {
-    fontSize: 12,
+    fontSize: 13,
     color: C.textDim,
-    flex: 1,
-    lineHeight: 18,
+    lineHeight: 20,
   },
 });

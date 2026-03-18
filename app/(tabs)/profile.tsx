@@ -6,6 +6,7 @@
  */
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import React, { useState } from 'react';
 import {
   Alert,
@@ -36,7 +37,15 @@ const APPEARANCE_OPTIONS: { mode: AppearanceMode; icon: 'sun' | 'smartphone' | '
 ];
 
 // ── Guest promo ──────────────────────────────────────────────────────────────
-function GuestPromoCard({ hPad }: { hPad: number }) {
+function GuestPromoCard({
+  hPad,
+  appearanceMode,
+  onAppearanceChange,
+}: {
+  hPad: number;
+  appearanceMode: AppearanceMode;
+  onAppearanceChange: (mode: AppearanceMode) => void;
+}) {
   const C = useColors();
   const router = useRouter();
   return (
@@ -58,12 +67,13 @@ function GuestPromoCard({ hPad }: { hPad: number }) {
           <Text style={[g.link, { color: C.accent }]}>Already have an account? Sign In</Text>
         </TouchableOpacity>
       </View>
+
       <Text style={[g.sectionTitle, { color: C.text }]}>What you unlock</Text>
       {[
         { icon: '⭐', label: 'Submit Ratings', desc: 'Rate noise, light, and crowd at any place' },
         { icon: '🎖️', label: 'Earn Badges', desc: 'Get rewarded for helping the community' },
-        { icon: '🎚️', label: 'My Sensory Profile', desc: 'Set your personal sensitivities' },
-        { icon: '🔖', label: 'Save Favorites', desc: 'Bookmark sensory-friendly spots' },
+        { icon: '📊', label: 'Review History', desc: 'Track every place you\'ve rated over time' },
+        { icon: '🤝', label: 'Community Impact', desc: 'See how your reviews help other visitors' },
       ].map(({ icon, label, desc }) => (
         <View key={label} style={[g.perkRow, { backgroundColor: C.surface, borderColor: C.border }]}>
           <Text style={g.perkIcon}>{icon}</Text>
@@ -73,6 +83,32 @@ function GuestPromoCard({ hPad }: { hPad: number }) {
           </View>
         </View>
       ))}
+
+      {/* Appearance toggle — available even as guest */}
+      <View style={s.appearanceRow}>
+        <Text style={[s.sectionTitle, { color: C.text, marginTop: 0 }]}>Appearance</Text>
+        <View style={[s.segmented, { backgroundColor: C.surface, borderColor: C.border }]}>
+          {APPEARANCE_OPTIONS.map(({ mode, icon, label }) => {
+            const active = appearanceMode === mode;
+            return (
+              <TouchableOpacity
+                key={mode}
+                style={[s.segmentBtn, active && { backgroundColor: C.elevated }]}
+                onPress={() => onAppearanceChange(mode)}
+                activeOpacity={0.7}
+                accessibilityRole="radio"
+                accessibilityState={{ checked: active }}
+                accessibilityLabel={label}
+              >
+                <Feather name={icon} size={14} color={active ? C.accent : C.textDim} />
+                <Text style={[s.segmentLabel, { color: active ? C.text : C.textMuted, fontWeight: active ? '700' : '500' }]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
     </ScrollView>
   );
 }
@@ -102,7 +138,7 @@ export default function ProfileScreen() {
   const { width } = useWindowDimensions();
   const hPad = width >= 600 ? Math.max(Spacing.lg, (width - 640) / 2) : Spacing.lg;
 
-  const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>('system');
+  const [appearanceMode, setAppearanceMode] = useState<AppearanceMode>('light');
 
   const stats = useUserStats(session?.user.id);
 
@@ -125,8 +161,12 @@ export default function ProfileScreen() {
 
   const handleSignOut = async () => {
     const { error } = await supabase.auth.signOut();
-    if (error) Alert.alert('Sign Out Failed', 'Something went wrong. Please try again.');
-    else router.replace('/login' as any);
+    if (error) {
+      Alert.alert('Sign Out Failed', 'Something went wrong. Please try again.');
+    } else {
+      await SecureStore.deleteItemAsync('sensoryscope_onboarding_v1');
+      router.replace('/onboarding' as any);
+    }
   };
 
   const setAppearance = (mode: AppearanceMode) => {
@@ -139,7 +179,7 @@ export default function ProfileScreen() {
     return (
       <View style={{ flex: 1, backgroundColor: C.bg, paddingTop: insets.top + 16, paddingBottom: insets.bottom + 80 }}>
         <Text style={[s.pageTitle, { color: C.text, paddingHorizontal: hPad, marginBottom: Spacing.lg }]}>Profile</Text>
-        <GuestPromoCard hPad={hPad} />
+        <GuestPromoCard hPad={hPad} appearanceMode={appearanceMode} onAppearanceChange={setAppearance} />
       </View>
     );
   }

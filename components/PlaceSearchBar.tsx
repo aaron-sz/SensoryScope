@@ -278,8 +278,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     overflow: 'hidden',
     zIndex: 30,
-    elevation: 30,
     ...Shadows.card,
+    elevation: 30,
   },
   list: {
     maxHeight: 340,

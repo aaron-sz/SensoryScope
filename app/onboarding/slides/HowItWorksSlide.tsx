@@ -4,7 +4,6 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withDelay,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { C } from '../../../constants/onboarding';
@@ -19,121 +18,104 @@ interface Props {
 const STEPS = [
   {
     id: 'search',
-    num: '01',
-    icon: '🔍',
-    title: 'Search',
-    desc: 'Find restaurants, parks, cafes, and more near you on the map.',
+    num: '1',
+    verb: 'Open the map',
+    detail: 'Places near you appear automatically, color-coded by their sensory score.',
     color: C.primary,
-    bg: C.primaryPale,
   },
   {
     id: 'read',
-    num: '02',
-    icon: '⭐',
-    title: 'Read Ratings',
-    desc: 'See real sensory scores for noise, lighting, and crowds from real visitors.',
-    color: '#B45309',
-    bg: C.accentPale,
+    num: '2',
+    verb: 'Tap any pin',
+    detail: 'See real ratings for sound, light, and crowds — submitted by visitors like you.',
+    color: C.accent,
   },
   {
     id: 'go',
-    num: '03',
-    icon: '✅',
-    title: 'Go Confidently',
-    desc: 'Visit knowing exactly what to expect — no surprises, just comfort.',
+    num: '3',
+    verb: 'Go prepared',
+    detail: 'No surprises. You know exactly what the environment feels like before you arrive.',
     color: C.purple,
-    bg: C.purplePale,
   },
 ];
 
-const ENTER = { damping: 18, stiffness: 130, mass: 0.9 };
-
 export default function HowItWorksSlide({ height, isActive }: Props) {
-  const headerY = useSharedValue(32);
-  const headerOp = useSharedValue(0);
-  const s0Y = useSharedValue(32);
+  const hOp = useSharedValue(0);
+  const hY = useSharedValue(24);
   const s0Op = useSharedValue(0);
-  const s1Y = useSharedValue(32);
+  const s0Y = useSharedValue(24);
   const s1Op = useSharedValue(0);
-  const s2Y = useSharedValue(32);
+  const s1Y = useSharedValue(24);
   const s2Op = useSharedValue(0);
+  const s2Y = useSharedValue(24);
 
   useEffect(() => {
     if (isActive) {
-      headerY.value = withSpring(0, ENTER);
-      headerOp.value = withTiming(1, { duration: 320 });
-      s0Y.value = withDelay(120, withSpring(0, ENTER));
-      s0Op.value = withDelay(120, withTiming(1, { duration: 320 }));
-      s1Y.value = withDelay(240, withSpring(0, ENTER));
-      s1Op.value = withDelay(240, withTiming(1, { duration: 320 }));
-      s2Y.value = withDelay(360, withSpring(0, ENTER));
-      s2Op.value = withDelay(360, withTiming(1, { duration: 320 }));
+      hOp.value = withTiming(1, { duration: 400 });
+      hY.value = withTiming(0, { duration: 400 });
+      s0Op.value = withDelay(160, withTiming(1, { duration: 400 }));
+      s0Y.value = withDelay(160, withTiming(0, { duration: 400 }));
+      s1Op.value = withDelay(300, withTiming(1, { duration: 400 }));
+      s1Y.value = withDelay(300, withTiming(0, { duration: 400 }));
+      s2Op.value = withDelay(440, withTiming(1, { duration: 400 }));
+      s2Y.value = withDelay(440, withTiming(0, { duration: 400 }));
     } else {
-      headerY.value = 32;
-      headerOp.value = 0;
-      s0Y.value = 32;
+      hOp.value = 0;
+      hY.value = 24;
       s0Op.value = 0;
-      s1Y.value = 32;
+      s0Y.value = 24;
       s1Op.value = 0;
-      s2Y.value = 32;
+      s1Y.value = 24;
       s2Op.value = 0;
+      s2Y.value = 24;
     }
   }, [isActive]);
 
-  const headerStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: headerY.value }],
-    opacity: headerOp.value,
+  const headerAnim = useAnimatedStyle(() => ({
+    opacity: hOp.value,
+    transform: [{ translateY: hY.value }],
   }));
-  const step0Style = useAnimatedStyle(() => ({
-    transform: [{ translateY: s0Y.value }],
+  const row0 = useAnimatedStyle(() => ({
     opacity: s0Op.value,
+    transform: [{ translateY: s0Y.value }],
   }));
-  const step1Style = useAnimatedStyle(() => ({
-    transform: [{ translateY: s1Y.value }],
+  const row1 = useAnimatedStyle(() => ({
     opacity: s1Op.value,
+    transform: [{ translateY: s1Y.value }],
   }));
-  const step2Style = useAnimatedStyle(() => ({
-    transform: [{ translateY: s2Y.value }],
+  const row2 = useAnimatedStyle(() => ({
     opacity: s2Op.value,
+    transform: [{ translateY: s2Y.value }],
   }));
-
-  const stepStyles = [step0Style, step1Style, step2Style];
+  const rowAnims = [row0, row1, row2];
 
   return (
     <View style={[styles.slide, { width: W, height }]}>
-      <View style={styles.decorCircle1} />
-      <View style={styles.decorCircle2} />
-
       <View style={styles.content}>
-        <Animated.View style={[styles.headerBlock, headerStyle]}>
-          <View style={styles.badgeRow}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>HOW IT WORKS</Text>
-            </View>
-          </View>
-          <Text style={styles.heading}>Three simple{'\n'}steps to calm</Text>
+        {/* Header */}
+        <Animated.View style={[styles.header, headerAnim]}>
+          <Text style={styles.eyebrow}>How it works</Text>
+          <Text style={styles.heading}>{'Three steps.\nZero surprises.'}</Text>
         </Animated.View>
 
-        <View style={styles.steps}>
+        {/* Steps — timeline style */}
+        <View style={styles.timeline}>
           {STEPS.map((step, i) => (
-            <Animated.View key={step.id} style={stepStyles[i]}>
-              <View style={styles.stepRow}>
-                {/* Left: number + connector */}
-                <View style={styles.leftCol}>
-                  <View style={[styles.numCircle, { backgroundColor: step.bg, borderColor: step.color + '40' }]}>
-                    <Text style={[styles.numText, { color: step.color }]}>{step.num}</Text>
+            <Animated.View key={step.id} style={[styles.stepRow, rowAnims[i]]}>
+              {/* Number + connector line */}
+              <View style={styles.numCol}>
+                <Text style={[styles.stepNum, { color: step.color }]}>{step.num}</Text>
+                {i < STEPS.length - 1 && (
+                  <View style={styles.lineWrap}>
+                    <View style={[styles.line, { backgroundColor: step.color, opacity: 0.18 }]} />
                   </View>
-                  {i < STEPS.length - 1 && <View style={styles.connector} />}
-                </View>
+                )}
+              </View>
 
-                {/* Right: card */}
-                <View style={styles.stepCard}>
-                  <Text style={styles.stepIcon}>{step.icon}</Text>
-                  <View style={styles.stepTextBlock}>
-                    <Text style={[styles.stepTitle, { color: step.color }]}>{step.title}</Text>
-                    <Text style={styles.stepDesc}>{step.desc}</Text>
-                  </View>
-                </View>
+              {/* Text */}
+              <View style={styles.stepContent}>
+                <Text style={[styles.stepVerb, { color: step.color }]}>{step.verb}</Text>
+                <Text style={styles.stepDetail}>{step.detail}</Text>
               </View>
             </Animated.View>
           ))}
@@ -148,122 +130,73 @@ const styles = StyleSheet.create({
     backgroundColor: C.bg,
     overflow: 'hidden',
   },
-  decorCircle1: {
-    position: 'absolute',
-    width: W * 0.55,
-    height: W * 0.55,
-    borderRadius: 9999,
-    backgroundColor: C.primary,
-    opacity: 0.04,
-    top: -W * 0.12,
-    left: -W * 0.12,
-  },
-  decorCircle2: {
-    position: 'absolute',
-    width: W * 0.4,
-    height: W * 0.4,
-    borderRadius: 9999,
-    backgroundColor: C.accent,
-    opacity: 0.06,
-    bottom: W * 0.05,
-    right: -W * 0.1,
-  },
   content: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 44,
+    paddingHorizontal: 28,
     justifyContent: 'center',
   },
-  headerBlock: {
-    marginBottom: 28,
+  header: {
+    marginBottom: 36,
   },
-  badgeRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  badge: {
-    backgroundColor: C.primaryPale,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 99,
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: '700',
+  eyebrow: {
+    fontSize: 13,
+    fontWeight: '600',
     color: C.primary,
-    letterSpacing: 1.2,
+    letterSpacing: 0.4,
+    marginBottom: 10,
+    textTransform: 'uppercase',
   },
   heading: {
-    fontSize: 30,
+    fontSize: 32,
     fontWeight: '800',
     color: C.text,
-    letterSpacing: -0.6,
-    lineHeight: 38,
+    letterSpacing: -0.8,
+    lineHeight: 40,
   },
-  steps: {
+
+  // Timeline
+  timeline: {
     gap: 0,
   },
   stepRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 16,
   },
-  leftCol: {
+  numCol: {
+    width: 36,
     alignItems: 'center',
-    width: 44,
   },
-  numCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  numText: {
-    fontSize: 13,
+  stepNum: {
+    fontSize: 28,
     fontWeight: '800',
-    letterSpacing: 0.3,
+    letterSpacing: -0.5,
+    lineHeight: 34,
   },
-  connector: {
-    width: 2,
-    height: 22,
-    backgroundColor: C.border,
-    marginVertical: 3,
-  },
-  stepCard: {
+  lineWrap: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: C.card,
-    padding: 14,
-    borderRadius: 16,
-    marginBottom: 10,
-    shadowColor: '#3D4A5C',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 2,
-    borderWidth: 1,
-    borderColor: C.border,
-    gap: 12,
+    width: 1.5,
+    alignItems: 'center',
+    paddingVertical: 6,
   },
-  stepIcon: {
-    fontSize: 22,
-    marginTop: 2,
-  },
-  stepTextBlock: {
+  line: {
+    width: 1.5,
     flex: 1,
+    borderRadius: 1,
   },
-  stepTitle: {
-    fontSize: 15,
+  stepContent: {
+    flex: 1,
+    paddingLeft: 14,
+    paddingBottom: 28,
+  },
+  stepVerb: {
+    fontSize: 18,
     fontWeight: '700',
+    letterSpacing: -0.3,
     marginBottom: 4,
-    letterSpacing: -0.2,
   },
-  stepDesc: {
-    fontSize: 13,
+  stepDetail: {
+    fontSize: 14,
     color: C.textLight,
-    lineHeight: 19,
+    lineHeight: 21,
   },
 });

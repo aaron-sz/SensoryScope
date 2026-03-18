@@ -5,20 +5,18 @@ import Animated, {
   interpolateColor,
   useAnimatedStyle,
   useSharedValue,
-  withSpring,
   withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
-import { C, SLIDES_COUNT, SPRING_PRESS } from '../../constants/onboarding';
+import { C, SLIDES_COUNT } from '../../constants/onboarding';
 
 const ONBOARDING_KEY = 'sensoryscope_onboarding_v1';
 import { useSlideAnimation } from '../../hooks/useSlideAnimation';
 import WelcomeSlide from './slides/WelcomeSlide';
 import WhatIsSlide from './slides/WhatIsSlide';
 import HowItWorksSlide from './slides/HowItWorksSlide';
-import PreferencesSlide from './slides/PreferencesSlide';
 import PermissionsSlide from './slides/PermissionsSlide';
 import AllSetSlide from './slides/AllSetSlide';
 
@@ -29,54 +27,15 @@ function Dot({ isActive }: { isActive: boolean }) {
   const progress = useSharedValue(isActive ? 1 : 0);
 
   useEffect(() => {
-    progress.value = withSpring(isActive ? 1 : 0, { damping: 18, stiffness: 180 });
+    progress.value = withTiming(isActive ? 1 : 0, { duration: 250 });
   }, [isActive]);
 
   const animStyle = useAnimatedStyle(() => ({
-    width: 7 + progress.value * 19, // 7 → 26
+    width: 7 + progress.value * 19,
     backgroundColor: interpolateColor(progress.value, [0, 1], [C.border, C.primary]),
   }));
 
   return <Animated.View style={[styles.dot, animStyle]} />;
-}
-
-// --- Animated nav button ---
-function AnimatedNavButton({
-  onPress,
-  style,
-  children,
-  accessibilityLabel,
-}: {
-  onPress: () => void;
-  style: object;
-  children: React.ReactNode;
-  accessibilityLabel: string;
-}) {
-  const scale = useSharedValue(1);
-  const opacity = useSharedValue(1);
-
-  const animStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-    opacity: opacity.value,
-  }));
-
-  return (
-    <Pressable
-      onPressIn={() => {
-        scale.value = withSpring(0.95, SPRING_PRESS);
-        opacity.value = withTiming(0.85, { duration: 80 });
-      }}
-      onPressOut={() => {
-        scale.value = withSpring(1, SPRING_PRESS);
-        opacity.value = withTiming(1, { duration: 100 });
-      }}
-      onPress={onPress}
-      accessibilityLabel={accessibilityLabel}
-      accessibilityRole="button"
-    >
-      <Animated.View style={[style, animStyle]}>{children}</Animated.View>
-    </Pressable>
-  );
 }
 
 // --- Main screen ---
@@ -130,11 +89,10 @@ export default function OnboardingScreen() {
             <WelcomeSlide height={slideAreaHeight} isActive={currentSlide === 0} />
             <WhatIsSlide height={slideAreaHeight} isActive={currentSlide === 1} />
             <HowItWorksSlide height={slideAreaHeight} isActive={currentSlide === 2} />
-            <PreferencesSlide height={slideAreaHeight} isActive={currentSlide === 3} />
-            <PermissionsSlide height={slideAreaHeight} isActive={currentSlide === 4} />
+            <PermissionsSlide height={slideAreaHeight} isActive={currentSlide === 3} />
             <AllSetSlide
               height={slideAreaHeight}
-              isActive={currentSlide === 5}
+              isActive={currentSlide === 4}
               onComplete={handleComplete}
             />
           </Animated.View>
@@ -155,21 +113,23 @@ export default function OnboardingScreen() {
       {/* Navigation */}
       {!isLastSlide ? (
         <View style={styles.navRow}>
-          <AnimatedNavButton
+          <Pressable
             onPress={handleSkip}
-            style={styles.skipBtn}
             accessibilityLabel="Skip onboarding"
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.skipBtn, pressed && { opacity: 0.6 }]}
           >
             <Text style={styles.skipText}>Skip</Text>
-          </AnimatedNavButton>
+          </Pressable>
 
-          <AnimatedNavButton
+          <Pressable
             onPress={handleNext}
-            style={styles.nextBtn}
             accessibilityLabel={`Go to step ${currentSlide + 2}`}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.nextBtn, pressed && { opacity: 0.85 }]}
           >
             <Text style={styles.nextText}>Next  →</Text>
-          </AnimatedNavButton>
+          </Pressable>
         </View>
       ) : (
         <View style={styles.navSpacer} />
@@ -222,19 +182,14 @@ const styles = StyleSheet.create({
   },
   nextBtn: {
     backgroundColor: C.primary,
-    paddingVertical: 15,
-    paddingHorizontal: 36,
-    borderRadius: 50,
-    shadowColor: C.primary,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.36,
-    shadowRadius: 18,
-    elevation: 9,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 10,
   },
   nextText: {
     fontSize: 16,
     color: C.white,
     fontWeight: '700',
-    letterSpacing: 0.3,
+    letterSpacing: -0.2,
   },
 });

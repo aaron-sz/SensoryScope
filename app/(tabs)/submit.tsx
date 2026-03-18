@@ -7,6 +7,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
+import { useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -131,6 +132,13 @@ export default function SubmitScreen() {
   const { width } = useWindowDimensions();
   const isTablet = width >= 600;
   const hPad = isTablet ? Math.max(Spacing.lg, (width - 640) / 2) : Spacing.lg;
+  const params = useLocalSearchParams<{
+    prefillPlaceId?: string;
+    prefillName?: string;
+    prefillAddress?: string;
+    prefillLat?: string;
+    prefillLng?: string;
+  }>();
 
   const [picks, setPicks] = useState<Picks>({ sound: null, light: null, crowd: null });
   const [loading, setLoading] = useState(false);
@@ -143,6 +151,28 @@ export default function SubmitScreen() {
   const [selectedPlace, setSelectedPlace] = useState<PlaceResult | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<PlaceResult[]>([]);
+
+  // ── Pre-fill from map pin "Rate" button ────────────────────────────────
+  const prefillAppliedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (
+      params.prefillPlaceId &&
+      params.prefillName &&
+      prefillAppliedRef.current !== params.prefillPlaceId
+    ) {
+      prefillAppliedRef.current = params.prefillPlaceId;
+      setSelectedPlace({
+        place_id: params.prefillPlaceId,
+        name: params.prefillName,
+        formatted_address: params.prefillAddress,
+        latitude: params.prefillLat ? parseFloat(params.prefillLat) : undefined,
+        longitude: params.prefillLng ? parseFloat(params.prefillLng) : undefined,
+      });
+      setSearchQuery(params.prefillName);
+      setSearchResults([]);
+      setPicks({ sound: null, light: null, crowd: null });
+    }
+  }, [params.prefillPlaceId, params.prefillName, params.prefillAddress, params.prefillLat, params.prefillLng]);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchAbortRef = useRef<AbortController | null>(null);
 

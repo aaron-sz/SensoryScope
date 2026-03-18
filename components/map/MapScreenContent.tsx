@@ -52,12 +52,13 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import Animated, { FadeOut } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useFocusEffect } from 'expo-router';
 import LocationModal, { DisplayLocation } from '../LocationModal';
 import MapFAB from './MapFAB';
-import MapHeader from './MapHeader';
+import MapHeader, { type SearchResult } from './MapHeader';
 import MapLegend from './MapLegend';
 import TrafficLayer from './TrafficLayer';
 import TrafficLegend from './TrafficLegend';
@@ -231,7 +232,7 @@ function buildClusterColorExpr(C: typeof DarkColors): any[] {
 // Three stacked circles with increasing blur create a soft, organic heat blob
 // instead of a hard agar.io bubble. Color reflects sensory intensity.
 
-function buildClusterOuterGlow(C: typeof DarkColors): CircleLayerStyle {
+function buildClusterOuterGlow(C: typeof DarkColors, dark: boolean): CircleLayerStyle {
   return {
     circleColor: buildClusterColorExpr(C) as unknown as string,
     circleRadius: [
@@ -239,11 +240,13 @@ function buildClusterOuterGlow(C: typeof DarkColors): CircleLayerStyle {
       34, 10, 40, 30, 50, 80, 60,
     ] as unknown as number,
     circleBlur: 1,
-    circleOpacity: 0.45,
-  };
+    circleOpacity: dark ? 0.35 : 0.45,
+    // Low emissive — just enough to lift color off the dark tiles without killing the blur
+    circleEmissiveStrength: dark ? 0.3 : 0,
+  } as CircleLayerStyle;
 }
 
-function buildClusterMidGlow(C: typeof DarkColors): CircleLayerStyle {
+function buildClusterMidGlow(C: typeof DarkColors, dark: boolean): CircleLayerStyle {
   return {
     circleColor: buildClusterColorExpr(C) as unknown as string,
     circleRadius: [
@@ -251,23 +254,26 @@ function buildClusterMidGlow(C: typeof DarkColors): CircleLayerStyle {
       22, 10, 26, 30, 32, 80, 40,
     ] as unknown as number,
     circleBlur: 0.65,
-    circleOpacity: 0.55,
-  };
+    circleOpacity: dark ? 0.5 : 0.55,
+    circleEmissiveStrength: dark ? 0.45 : 0,
+  } as CircleLayerStyle;
 }
 
-function buildClusterCoreStyle(C: typeof DarkColors): CircleLayerStyle {
+function buildClusterCoreStyle(C: typeof DarkColors, dark: boolean): CircleLayerStyle {
   return {
     circleColor: buildClusterColorExpr(C) as unknown as string,
     circleRadius: [
       'step', ['get', 'point_count'],
       12, 10, 15, 30, 20, 80, 26,
     ] as unknown as number,
-    circleBlur: 0.3,
-    circleOpacity: 0.7,
-  };
+    circleBlur: 0.15,
+    circleOpacity: dark ? 0.9 : 0.7,
+    // Core gets the strongest emissive so the center reads clearly
+    circleEmissiveStrength: dark ? 0.8 : 0,
+  } as CircleLayerStyle;
 }
 
-function buildClusterLabelStyle(C: typeof DarkColors): SymbolLayerStyle {
+function buildClusterLabelStyle(C: typeof DarkColors, dark: boolean): SymbolLayerStyle {
   return {
     textField: [
       'concat',
@@ -275,7 +281,7 @@ function buildClusterLabelStyle(C: typeof DarkColors): SymbolLayerStyle {
       ' · ',
       dominantGroupExpr,
     ] as unknown as string,
-    textColor: C.text,
+    textColor: dark ? '#FFFFFF' : C.text,
     textSize: [
       'step', ['get', 'point_count'],
       11, 30, 12, 80, 13,
@@ -284,21 +290,23 @@ function buildClusterLabelStyle(C: typeof DarkColors): SymbolLayerStyle {
     textFont: ['DIN Pro Bold', 'Arial Unicode MS Bold'],
     textAllowOverlap: true,
     textIgnorePlacement: true,
-    textHaloColor: hexToRgba(C.bg, 0.9),
-    textHaloWidth: 2,
-  };
+    textHaloColor: dark ? 'rgba(20,26,35,0.95)' : hexToRgba(C.bg, 0.9),
+    textHaloWidth: dark ? 2.5 : 2,
+    textEmissiveStrength: dark ? 1.0 : 0,
+  } as SymbolLayerStyle;
 }
 
-function buildGlowStyle(): CircleLayerStyle {
+function buildGlowStyle(dark: boolean): CircleLayerStyle {
   return {
     circleColor: ['get', 'scoreColorValue'] as unknown as string,
     circleRadius: ['case', ['==', ['get', 'isSelected'], 1], 28, 0] as unknown as number,
     circleOpacity: 0.18,
     circleBlur: 0.8,
-  };
+    circleEmissiveStrength: dark ? 0.8 : 0,
+  } as CircleLayerStyle;
 }
 
-function buildMainCircleStyle(C: typeof DarkColors): CircleLayerStyle {
+function buildMainCircleStyle(C: typeof DarkColors, dark: boolean): CircleLayerStyle {
   return {
     circleColor: [
       'case',
@@ -331,17 +339,18 @@ function buildMainCircleStyle(C: typeof DarkColors): CircleLayerStyle {
     circleSortKey: [
       'case', ['==', ['get', 'isRated'], 1], 1, 0,
     ] as unknown as number,
-  };
+    circleEmissiveStrength: dark ? 1.0 : 0,
+  } as CircleLayerStyle;
 }
 
-function buildNameLabelStyle(C: typeof DarkColors): SymbolLayerStyle {
+function buildNameLabelStyle(C: typeof DarkColors, dark: boolean): SymbolLayerStyle {
   return {
     textField: ['get', 'displayName'] as unknown as string,
     textColor: [
       'case',
-      ['==', ['get', 'isSelected'], 1], C.text,
-      ['==', ['get', 'isRated'], 1], C.text,
-      C.textMuted,
+      ['==', ['get', 'isSelected'], 1], dark ? '#FFFFFF' : C.text,
+      ['==', ['get', 'isRated'], 1], dark ? '#E8EDF2' : C.text,
+      dark ? '#9CA8B8' : C.textMuted,
     ] as unknown as string,
     textSize: [
       'case',
@@ -353,11 +362,12 @@ function buildNameLabelStyle(C: typeof DarkColors): SymbolLayerStyle {
     textAnchor: 'top',
     textMaxWidth: 7,
     textFont: ['DIN Pro Medium', 'Arial Unicode MS Regular'],
-    textHaloColor: hexToRgba(C.bg, 0.8),
-    textHaloWidth: 1.4,
+    textHaloColor: dark ? 'rgba(20,26,35,0.95)' : hexToRgba(C.bg, 0.8),
+    textHaloWidth: dark ? 2 : 1.4,
     textAllowOverlap: true,
     textIgnorePlacement: true,
-  };
+    textEmissiveStrength: dark ? 1.0 : 0,
+  } as SymbolLayerStyle;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -389,20 +399,21 @@ export default function MapScreenContent() {
   const { width } = useWindowDimensions();
   const isTablet = width >= TABLET_BREAKPOINT;
   const C = useColors();
-  const mapStyleURL = C === DarkColors
+  const isDark = C === DarkColors;
+  const mapStyleURL = isDark
     ? 'mapbox://styles/aaronnnn/cmmqhj5yd000401s6bbso6qma'
     : 'mapbox://styles/aaronnnn/cmmqgvnh7006h01qu8qsl4wcy';
   const { cameraRef, flyTo, flyToUser, resetToUser } = useMapCamera();
   const { getDisplayName } = useSmartLabels();
 
   // ── Theme-aware map layer styles ──────────────────────────────────────────
-  const clusterOuterGlow = useMemo(() => buildClusterOuterGlow(C), [C]);
-  const clusterMidGlow = useMemo(() => buildClusterMidGlow(C), [C]);
-  const clusterCoreStyle = useMemo(() => buildClusterCoreStyle(C), [C]);
-  const clusterLabelStyle = useMemo(() => buildClusterLabelStyle(C), [C]);
-  const glowStyle = useMemo(() => buildGlowStyle(), []);
-  const mainCircleStyle = useMemo(() => buildMainCircleStyle(C), [C]);
-  const nameLabelStyle = useMemo(() => buildNameLabelStyle(C), [C]);
+  const clusterOuterGlow = useMemo(() => buildClusterOuterGlow(C, isDark), [C, isDark]);
+  const clusterMidGlow = useMemo(() => buildClusterMidGlow(C, isDark), [C, isDark]);
+  const clusterCoreStyle = useMemo(() => buildClusterCoreStyle(C, isDark), [C, isDark]);
+  const clusterLabelStyle = useMemo(() => buildClusterLabelStyle(C, isDark), [C, isDark]);
+  const glowStyle = useMemo(() => buildGlowStyle(isDark), [isDark]);
+  const mainCircleStyle = useMemo(() => buildMainCircleStyle(C, isDark), [C, isDark]);
+  const nameLabelStyle = useMemo(() => buildNameLabelStyle(C, isDark), [C, isDark]);
 
   // ── State ───────────────────────────────────────────────────────────────────
   const [userCoords, setUserCoords] = useState<[number, number] | null>(null);
@@ -422,7 +433,7 @@ export default function MapScreenContent() {
   const lastCameraRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
   const preSelectCameraRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
 
-  const { places, loading, error, refetch, fetchAround } = useNearbyPlaces(
+  const { places, loading, error, refetch, fetchAround, injectPlace } = useNearbyPlaces(
     userCoords ? userCoords[1] : null,
     userCoords ? userCoords[0] : null,
     NEARBY_RADIUS_M,
@@ -451,6 +462,20 @@ export default function MapScreenContent() {
     })();
     return () => { cancelled = true; };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Re-fly camera after theme change (style URL swap) ────────────────────
+  const prevStyleRef = useRef(mapStyleURL);
+  useEffect(() => {
+    if (prevStyleRef.current === mapStyleURL) return;
+    prevStyleRef.current = mapStyleURL;
+    // Style changed — restore camera to last known position or user location
+    const restore = lastCameraRef.current;
+    if (restore) {
+      setTimeout(() => flyTo(restore.center, restore.zoom, 600, 0), 300);
+    } else if (userCoords) {
+      setTimeout(() => flyTo(userCoords, 13, 600, 0), 300);
+    }
+  }, [mapStyleURL, flyTo, userCoords]);
 
   // ── Camera reset on filter change ─────────────────────────────────────────
   useEffect(() => {
@@ -579,14 +604,22 @@ export default function MapScreenContent() {
   }, []);
 
   // ── Auto-fetch on pan (onMapIdle) ───────────────────────────────────────────
+  // Only fetch when zoomed in enough — prevents loading the entire USA on cold start
+  const MIN_FETCH_ZOOM = 10;
+
   const handleRegionDidChange = useCallback(
     (state: any) => {
-      // onMapIdle provides MapState: { properties: { center, zoom, ... }, gestures }
       const center = state.properties?.center;
       const zoom = state.properties?.zoom ?? 13;
       if (!center || !Array.isArray(center) || center.length < 2) return;
       const [lng, lat] = center as [number, number];
       lastCameraRef.current = { center: [lng, lat], zoom };
+
+      // Don't fetch when zoomed out too far — prevents mass loading on cold start
+      if (zoom < MIN_FETCH_ZOOM) return;
+
+      // Skip auto-fetch while a search flyTo is in progress
+      if (searchFlyingRef.current) return;
 
       // Debounce — reset timer each time the region changes
       if (panFetchTimerRef.current) clearTimeout(panFetchTimerRef.current);
@@ -606,6 +639,40 @@ export default function MapScreenContent() {
       }, PAN_DEBOUNCE_MS);
     },
     [fetchAround],
+  );
+
+  // ── Search select — fly to result and fetch around it ──────────────────────
+  const searchFlyingRef = useRef(false);
+
+  const handleSearchSelect = useCallback(
+    (result: SearchResult) => {
+      // Mark as flying so onMapIdle doesn't fight the animation
+      searchFlyingRef.current = true;
+      setTimeout(() => { searchFlyingRef.current = false; }, 2000);
+
+      // Register center so auto-fetch doesn't re-fetch immediately
+      fetchedCentersRef.current.push([result.lat, result.lng]);
+
+      // Inject the searched place as a pin immediately so it's visible
+      injectPlace({
+        id: result.place_id,
+        name: result.name,
+        latitude: result.lat,
+        longitude: result.lng,
+        category: 'point_of_interest',
+        address: result.formatted_address,
+        isRated: false,
+        googlePlaceId: result.place_id,
+        avg_sound: null,
+        avg_light: null,
+        avg_crowd: null,
+        review_count: 0,
+      });
+
+      flyTo([result.lng, result.lat], 17, 1400, 0);
+      fetchAround(result.lat, result.lng);
+    },
+    [flyTo, fetchAround, injectPlace],
   );
 
   // Reset fetch-center cache whenever the user triggers a hard refetch
@@ -665,7 +732,6 @@ export default function MapScreenContent() {
     <View style={styles.container}>
       {/* ── Map ─────────────────────────────────────────────────────────── */}
       <MapView
-        key={mapStyleURL}
         style={styles.map}
         styleURL={mapStyleURL}
 
@@ -687,9 +753,9 @@ export default function MapScreenContent() {
         {locationGranted && <UserLocation visible animated />}
 
         {/* Traffic congestion layer with fade-in/out opacity */}
-        <TrafficLayer visible={trafficMounted} opacity={trafficOpacity} />
+        <TrafficLayer visible={trafficMounted} opacity={trafficOpacity} dark={isDark} />
 
-        {filteredPlaces.length > 0 && (
+        {userCoords != null && filteredPlaces.length > 0 && (
           <ShapeSource
             id="sensory-locations"
             shape={geoJSON}
@@ -723,6 +789,9 @@ export default function MapScreenContent() {
         activeFilter={activeFilter}
         onFilterChange={handleFilterChange}
         onRefresh={handleRefetch}
+        onSearchSelect={handleSearchSelect}
+        userLat={userCoords ? userCoords[1] : null}
+        userLng={userCoords ? userCoords[0] : null}
       />
 
       {/* ── Sensory Legend — hidden while a place is open ───────────────── */}
@@ -759,12 +828,19 @@ export default function MapScreenContent() {
         />
       )}
 
-      {/* ── Loading overlay (first load only) ───────────────────────────── */}
-      {loading && places.length === 0 && (
-        <View style={styles.loadingOverlay}>
-          <ActivityIndicator size="large" color={C.accent} />
-          <Text style={styles.loadingText}>Finding places nearby…</Text>
-        </View>
+      {/* ── Full-screen loading splash until we have user location ─────── */}
+      {userCoords == null && (
+        <Animated.View
+          exiting={FadeOut.duration(400)}
+          style={[styles.loadingSplash, { backgroundColor: C.bg }]}
+        >
+          <Ionicons name="navigate-circle-outline" size={48} color={C.accent} />
+          <Text style={[styles.splashTitle, { color: C.text }]}>SensoryScope</Text>
+          <Text style={[styles.splashSubtitle, { color: C.textMuted }]}>
+            Finding your location…
+          </Text>
+          <ActivityIndicator size="small" color={C.accent} style={{ marginTop: 20 }} />
+        </Animated.View>
       )}
 
       {/* ── Error banner ────────────────────────────────────────────────── */}
@@ -822,18 +898,22 @@ const styles = StyleSheet.create({
   map: {
     flex: 1,
   },
-  loadingOverlay: {
+  loadingSplash: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(8,15,30,0.75)',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 14,
-    zIndex: 20,
+    zIndex: 50,
   },
-  loadingText: {
-    color: '#F1F5F9',
+  splashTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+    marginTop: 14,
+  },
+  splashSubtitle: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
+    marginTop: 4,
   },
   errorBanner: {
     position: 'absolute',

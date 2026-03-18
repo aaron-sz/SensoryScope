@@ -29,7 +29,7 @@ export const SPRING_PRESS = {
   mass: 0.5,
 };
 
-export const SLIDES_COUNT = 6;
+export const SLIDES_COUNT = 5;
 
 export const PREFERENCES = [
   { id: 'noise', label: 'Loud Noises', icon: '🔊' },

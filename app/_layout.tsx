@@ -2,11 +2,14 @@ import { Session } from '@supabase/supabase-js';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import * as SecureStore from 'expo-secure-store';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, useColorScheme, View } from 'react-native';
+import { ActivityIndicator, Appearance, useColorScheme, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { DarkColors, LightColors } from '../constants/theme';
 import { supabase } from '../lib/supabase';
+
+// Default to light mode until the user explicitly picks dark or system
+Appearance.setColorScheme('light');
 
 const ONBOARDING_KEY = 'sensoryscope_onboarding_v1';
 

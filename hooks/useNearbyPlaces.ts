@@ -60,6 +60,8 @@ export type UseNearbyPlacesResult = {
   refetch: () => void;
   /** Fetch places around a new map center and merge into the existing set. */
   fetchAround: (lat: number, lng: number) => void;
+  /** Inject a single place into the cache (e.g. from search results). */
+  injectPlace: (place: MapPlace) => void;
 };
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
@@ -138,7 +140,16 @@ export function useNearbyPlaces(
     [fetchAroundCenter],
   );
 
-  return { places, loading, error, refetch, fetchAround };
+  /** Inject a single place into the cache (e.g. from search). */
+  const injectPlace = useCallback(
+    (place: MapPlace) => {
+      placeCache.current.set(place.id, place);
+      setPlaces(Array.from(placeCache.current.values()));
+    },
+    [],
+  );
+
+  return { places, loading, error, refetch, fetchAround, injectPlace };
 }
 
 // ── Google Places fetch ───────────────────────────────────────────────────────

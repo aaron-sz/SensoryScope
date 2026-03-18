@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Dimensions, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -16,227 +16,331 @@ interface Props {
   isActive: boolean;
 }
 
-const FEATURES = [
+// ── Equalizer bars for Sound ──────────────────────────────────────────────────
+// Deterministic "random" heights so the waveform looks organic, not uniform
+const EQ_HEIGHTS = [0.3, 0.7, 0.5, 1, 0.6, 0.85, 0.4, 0.9, 0.55, 0.75, 0.35, 0.65, 0.8, 0.45, 0.6];
+
+function SoundViz() {
+  return (
+    <View style={vizStyles.eqRow}>
+      {EQ_HEIGHTS.map((h, i) => (
+        <View
+          key={i}
+          style={[
+            vizStyles.eqBar,
+            {
+              height: 32 * h,
+              opacity: 0.35 + h * 0.55,
+              backgroundColor: C.primary,
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
+// ── Radiance rings for Light ──────────────────────────────────────────────────
+const RING_SIZES = [56, 44, 30, 16];
+
+function LightViz() {
+  return (
+    <View style={vizStyles.lightWrap}>
+      {RING_SIZES.map((size, i) => (
+        <View
+          key={i}
+          style={[
+            vizStyles.ring,
+            {
+              width: size,
+              height: size,
+              borderRadius: size / 2,
+              backgroundColor: C.accent,
+              opacity: 0.12 + i * 0.18,
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
+// ── Scattered dots for Crowds ─────────────────────────────────────────────────
+// Pre-computed positions so dots feel hand-placed
+const DOTS = [
+  { x: 6, y: 4, s: 7 },
+  { x: 22, y: 0, s: 6 },
+  { x: 38, y: 6, s: 8 },
+  { x: 14, y: 18, s: 6 },
+  { x: 30, y: 14, s: 7 },
+  { x: 46, y: 10, s: 5 },
+  { x: 0, y: 28, s: 5 },
+  { x: 20, y: 30, s: 8 },
+  { x: 42, y: 26, s: 6 },
+  { x: 10, y: 40, s: 7 },
+  { x: 34, y: 38, s: 5 },
+  { x: 50, y: 34, s: 6 },
+];
+
+function CrowdViz() {
+  return (
+    <View style={vizStyles.dotField}>
+      {DOTS.map((d, i) => (
+        <View
+          key={i}
+          style={[
+            vizStyles.dot,
+            {
+              left: d.x,
+              top: d.y,
+              width: d.s,
+              height: d.s,
+              borderRadius: d.s / 2,
+              opacity: 0.3 + (i % 3) * 0.2,
+            },
+          ]}
+        />
+      ))}
+    </View>
+  );
+}
+
+// ── Sense data ────────────────────────────────────────────────────────────────
+const SENSES = [
   {
-    id: 'noise',
-    icon: '🔊',
-    title: 'Noise Levels',
-    desc: 'From whisper-quiet cafes to lively bars — know the vibe before you arrive.',
-    iconBg: C.primaryPale,
-    iconColor: C.primary,
-    accentBar: C.primary,
+    id: 'sound',
+    label: 'Sound',
+    range: 'Whisper-quiet  →  Concert-loud',
+    color: C.primary,
+    Viz: SoundViz,
   },
   {
-    id: 'lighting',
-    icon: '💡',
-    title: 'Lighting',
-    desc: 'Bright, dim, warm, or natural — find spaces that match your comfort.',
-    iconBg: C.accentPale,
-    iconColor: '#B45309',
-    accentBar: C.accent,
+    id: 'light',
+    label: 'Light',
+    range: 'Candlelit  →  Fluorescent',
+    color: C.accent,
+    Viz: LightViz,
   },
   {
-    id: 'crowds',
-    icon: '👥',
-    title: 'Crowd Density',
-    desc: 'Cozy and calm or buzzing with energy — choose your crowd comfort level.',
-    iconBg: C.purplePale,
-    iconColor: C.purple,
-    accentBar: C.purple,
+    id: 'crowd',
+    label: 'Crowd',
+    range: 'Empty seat  →  Standing room',
+    color: C.purple,
+    Viz: CrowdViz,
   },
 ];
 
-const ENTER = { damping: 18, stiffness: 130, mass: 0.9 };
+// ── Animation config ──────────────────────────────────────────────────────────
+const ENTER = { damping: 20, stiffness: 120, mass: 0.85 };
 
 export default function WhatIsSlide({ height, isActive }: Props) {
-  const headerY = useSharedValue(32);
-  const headerOp = useSharedValue(0);
-  const c0Y = useSharedValue(32);
-  const c0Op = useSharedValue(0);
-  const c1Y = useSharedValue(32);
-  const c1Op = useSharedValue(0);
-  const c2Y = useSharedValue(32);
-  const c2Op = useSharedValue(0);
+  // Header
+  const hY = useSharedValue(28);
+  const hOp = useSharedValue(0);
+  // 3 sense rows
+  const s0Y = useSharedValue(28);
+  const s0Op = useSharedValue(0);
+  const s1Y = useSharedValue(28);
+  const s1Op = useSharedValue(0);
+  const s2Y = useSharedValue(28);
+  const s2Op = useSharedValue(0);
 
   useEffect(() => {
     if (isActive) {
-      headerY.value = withSpring(0, ENTER);
-      headerOp.value = withTiming(1, { duration: 320 });
-      c0Y.value = withDelay(110, withSpring(0, ENTER));
-      c0Op.value = withDelay(110, withTiming(1, { duration: 320 }));
-      c1Y.value = withDelay(210, withSpring(0, ENTER));
-      c1Op.value = withDelay(210, withTiming(1, { duration: 320 }));
-      c2Y.value = withDelay(310, withSpring(0, ENTER));
-      c2Op.value = withDelay(310, withTiming(1, { duration: 320 }));
+      hY.value = withSpring(0, ENTER);
+      hOp.value = withTiming(1, { duration: 350 });
+      s0Y.value = withDelay(140, withSpring(0, ENTER));
+      s0Op.value = withDelay(140, withTiming(1, { duration: 350 }));
+      s1Y.value = withDelay(260, withSpring(0, ENTER));
+      s1Op.value = withDelay(260, withTiming(1, { duration: 350 }));
+      s2Y.value = withDelay(380, withSpring(0, ENTER));
+      s2Op.value = withDelay(380, withTiming(1, { duration: 350 }));
     } else {
-      headerY.value = 32;
-      headerOp.value = 0;
-      c0Y.value = 32;
-      c0Op.value = 0;
-      c1Y.value = 32;
-      c1Op.value = 0;
-      c2Y.value = 32;
-      c2Op.value = 0;
+      hY.value = 28;
+      hOp.value = 0;
+      s0Y.value = 28;
+      s0Op.value = 0;
+      s1Y.value = 28;
+      s1Op.value = 0;
+      s2Y.value = 28;
+      s2Op.value = 0;
     }
   }, [isActive]);
 
-  const headerStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: headerY.value }],
-    opacity: headerOp.value,
+  const headerAnim = useAnimatedStyle(() => ({
+    transform: [{ translateY: hY.value }],
+    opacity: hOp.value,
   }));
-  const card0Style = useAnimatedStyle(() => ({
-    transform: [{ translateY: c0Y.value }],
-    opacity: c0Op.value,
+  const row0 = useAnimatedStyle(() => ({
+    transform: [{ translateY: s0Y.value }],
+    opacity: s0Op.value,
   }));
-  const card1Style = useAnimatedStyle(() => ({
-    transform: [{ translateY: c1Y.value }],
-    opacity: c1Op.value,
+  const row1 = useAnimatedStyle(() => ({
+    transform: [{ translateY: s1Y.value }],
+    opacity: s1Op.value,
   }));
-  const card2Style = useAnimatedStyle(() => ({
-    transform: [{ translateY: c2Y.value }],
-    opacity: c2Op.value,
+  const row2 = useAnimatedStyle(() => ({
+    transform: [{ translateY: s2Y.value }],
+    opacity: s2Op.value,
   }));
-
-  const cardStyles = [card0Style, card1Style, card2Style];
+  const rowAnims = [row0, row1, row2];
 
   return (
     <View style={[styles.slide, { width: W, height }]}>
-      <View style={styles.topStrip} />
-
       <View style={styles.content}>
-        <Animated.View style={[styles.headerBlock, headerStyle]}>
-          <View style={styles.badgeRow}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>FEATURES</Text>
-            </View>
-          </View>
-          <Text style={styles.heading}>{'Your sensory\nguide to places'}</Text>
-          <Text style={styles.subheading}>Every venue rated on what matters most.</Text>
+        {/* ── Header ── */}
+        <Animated.View style={[styles.header, headerAnim]}>
+          <Text style={styles.eyebrow}>We measure what maps don't</Text>
+          <Text style={styles.heading}>{'Three senses.\nOne score.'}</Text>
         </Animated.View>
 
-        <View style={styles.cards}>
-          {FEATURES.map((f, i) => (
-            <Animated.View key={f.id} style={[styles.card, cardStyles[i]]}>
-              <View style={[styles.accentBar, { backgroundColor: f.accentBar }]} />
-              <View style={[styles.iconCircle, { backgroundColor: f.iconBg }]}>
-                <Text style={styles.cardIcon}>{f.icon}</Text>
-              </View>
-              <View style={styles.cardText}>
-                <Text style={[styles.cardTitle, { color: f.iconColor }]}>{f.title}</Text>
-                <Text style={styles.cardDesc}>{f.desc}</Text>
-              </View>
-            </Animated.View>
-          ))}
+        {/* ── Sense rows ── */}
+        <View style={styles.senses}>
+          {SENSES.map((s, i) => {
+            const Viz = s.Viz;
+            return (
+              <Animated.View key={s.id} style={[styles.senseRow, rowAnims[i]]}>
+                {/* Viz illustration */}
+                <View style={styles.vizBox}>
+                  <Viz />
+                </View>
+
+                {/* Text column */}
+                <View style={styles.senseText}>
+                  <Text style={[styles.senseLabel, { color: s.color }]}>{s.label}</Text>
+                  <View style={styles.rangeLine}>
+                    <View style={[styles.rangeDot, { backgroundColor: s.color }]} />
+                    <Text style={styles.rangeText}>{s.range}</Text>
+                  </View>
+                </View>
+              </Animated.View>
+            );
+          })}
         </View>
+
+        {/* ── Footer note ── */}
+        <Animated.View style={headerAnim}>
+          <Text style={styles.footer}>
+            Rated 1–10 by real visitors. Combined into one overall score so you know what to expect.
+          </Text>
+        </Animated.View>
       </View>
     </View>
   );
 }
 
+// ── Viz styles ────────────────────────────────────────────────────────────────
+const vizStyles = StyleSheet.create({
+  eqRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    height: 32,
+    gap: 2.5,
+  },
+  eqBar: {
+    width: 3,
+    borderRadius: 1.5,
+  },
+  lightWrap: {
+    width: 56,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  ring: {
+    position: 'absolute',
+  },
+  dotField: {
+    width: 60,
+    height: 52,
+  },
+  dot: {
+    position: 'absolute',
+    backgroundColor: C.purple,
+  },
+});
+
+// ── Layout styles ─────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   slide: {
     backgroundColor: C.bg,
     overflow: 'hidden',
   },
-  topStrip: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: 4,
-    backgroundColor: C.primary,
-    opacity: 0.15,
-  },
   content: {
     flex: 1,
-    paddingHorizontal: 24,
-    paddingTop: 40,
+    paddingHorizontal: 28,
     justifyContent: 'center',
   },
-  headerBlock: {
-    marginBottom: 24,
+
+  // Header
+  header: {
+    marginBottom: 36,
   },
-  badgeRow: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  badge: {
-    backgroundColor: C.primaryPale,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 99,
-  },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: '700',
+  eyebrow: {
+    fontSize: 13,
+    fontWeight: '600',
     color: C.primary,
-    letterSpacing: 1.2,
+    letterSpacing: 0.4,
+    marginBottom: 10,
+    textTransform: 'uppercase',
   },
   heading: {
-    fontSize: 30,
+    fontSize: 32,
     fontWeight: '800',
     color: C.text,
-    letterSpacing: -0.6,
-    lineHeight: 38,
-    marginBottom: 8,
+    letterSpacing: -0.8,
+    lineHeight: 40,
   },
-  subheading: {
-    fontSize: 15,
-    color: C.textLight,
-    lineHeight: 22,
+
+  // Sense rows
+  senses: {
+    gap: 0,
+    marginBottom: 32,
   },
-  cards: {
-    gap: 12,
-  },
-  card: {
-    backgroundColor: C.card,
-    borderRadius: 18,
+  senseRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    overflow: 'hidden',
-    shadowColor: '#3D4A5C',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.07,
-    shadowRadius: 12,
-    elevation: 3,
-    borderWidth: 1,
-    borderColor: C.border,
+    paddingVertical: 18,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.border,
   },
-  accentBar: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: 3,
-    borderTopLeftRadius: 18,
-    borderBottomLeftRadius: 18,
-  },
-  iconCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 15,
+  vizBox: {
+    width: 68,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 14,
-    marginLeft: 8,
-    flexShrink: 0,
+    marginRight: 18,
   },
-  cardIcon: {
-    fontSize: 24,
-  },
-  cardText: {
+  senseText: {
     flex: 1,
   },
-  cardTitle: {
-    fontSize: 15,
+  senseLabel: {
+    fontSize: 22,
     fontWeight: '700',
-    marginBottom: 3,
-    letterSpacing: -0.2,
+    letterSpacing: -0.4,
+    marginBottom: 4,
   },
-  cardDesc: {
+  rangeLine: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  rangeDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
+  },
+  rangeText: {
     fontSize: 13,
     color: C.textLight,
-    lineHeight: 19,
+    letterSpacing: 0.2,
+  },
+
+  // Footer
+  footer: {
+    fontSize: 13,
+    color: C.textDim,
+    lineHeight: 20,
+    textAlign: 'center',
+    paddingHorizontal: 12,
   },
 });

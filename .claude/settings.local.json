@@ -30,7 +30,9 @@
       "Bash(powershell -Command \"Get-WindowsDeveloperLicense | Select-Object IsValid\")",
       "Bash(powershell -Command \"\\(Get-ItemProperty HKLM:\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\AppModelUnlock -Name AllowDevelopmentWithoutDevLicense -ErrorAction SilentlyContinue\\).AllowDevelopmentWithoutDevLicense\")",
       "Bash(powershell -Command \"reg query 'HKLM\\\\SOFTWARE\\\\Microsoft\\\\Windows\\\\CurrentVersion\\\\AppModelUnlock' /v AllowDevelopmentWithoutDevLicense 2>&1\")",
-      "Bash(android/gradlew.bat -p android clean)"
+      "Bash(android/gradlew.bat -p android clean)",
+      "WebFetch(domain:docs.mapbox.com)",
+      "Bash(ls:*)"
     ]
   }
 }

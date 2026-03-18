@@ -12,9 +12,6 @@
  *
  * Opacity is controlled externally (0 = hidden, 1 = fully visible)
  * so the parent can animate the fade in/out smoothly.
- * Mapbox's lineOpacityTransition drives the CSS-level transition.
- *
- * Place this component INSIDE a <MapView> as a direct child.
  */
 import { LineLayer, type LineLayerStyle, VectorSource } from '@rnmapbox/maps';
 import React, { memo, useMemo } from 'react';
@@ -28,6 +25,15 @@ export const TRAFFIC_COLORS = {
   unknown:  '#94A3B8', // slate     — no data
 } as const;
 
+// Brighter variants for dark mode — same hues, higher luminance
+const TRAFFIC_COLORS_DARK = {
+  low:      '#4ADE80', // green-400
+  moderate: '#FACC15', // yellow-400
+  heavy:    '#FB923C', // orange-400
+  severe:   '#F87171', // red-400
+  unknown:  '#94A3B8',
+} as const;
+
 // ── Filter: only render segments with known congestion ────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const TRAFFIC_FILTER = ['in', 'congestion', 'low', 'moderate', 'heavy', 'severe'] as any;
@@ -36,30 +42,28 @@ const TRAFFIC_FILTER = ['in', 'congestion', 'low', 'moderate', 'heavy', 'severe'
 interface TrafficLayerProps {
   /** Whether the traffic source is mounted at all */
   visible: boolean;
-  /**
-   * Opacity multiplier 0–1.
-   * Used to fade the layer in/out via Mapbox's lineOpacityTransition.
-   * The parent drives this from 0 → 1 when toggling on, 1 → 0 when toggling off.
-   */
+  /** Opacity multiplier 0–1 for fade animation */
   opacity: number;
+  /** Dark mode flag for emissive + color adjustments */
+  dark?: boolean;
 }
 
-const TrafficLayer = memo(function TrafficLayer({ visible, opacity }: TrafficLayerProps) {
+const TrafficLayer = memo(function TrafficLayer({ visible, opacity, dark = false }: TrafficLayerProps) {
   if (!visible) return null;
 
-  // Build style dynamically so the transition fires when opacity changes.
-  // useMemo keeps the object stable between renders when opacity hasn't changed.
+  const colors = dark ? TRAFFIC_COLORS_DARK : TRAFFIC_COLORS;
+
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const trafficLineStyle = useMemo<LineLayerStyle>(
     () => ({
       lineColor: [
         'match',
         ['get', 'congestion'],
-        'low',      TRAFFIC_COLORS.low,
-        'moderate', TRAFFIC_COLORS.moderate,
-        'heavy',    TRAFFIC_COLORS.heavy,
-        'severe',   TRAFFIC_COLORS.severe,
-        TRAFFIC_COLORS.unknown,
+        'low',      colors.low,
+        'moderate', colors.moderate,
+        'heavy',    colors.heavy,
+        'severe',   colors.severe,
+        colors.unknown,
       ] as unknown as string,
 
       lineWidth: [
@@ -70,7 +74,6 @@ const TrafficLayer = memo(function TrafficLayer({ visible, opacity }: TrafficLay
         17, 6.0,
       ] as unknown as number,
 
-      // Blend zoom-based fade with the external opacity multiplier
       lineOpacity: [
         'interpolate', ['linear'], ['zoom'],
         7,  0,
@@ -81,8 +84,9 @@ const TrafficLayer = memo(function TrafficLayer({ visible, opacity }: TrafficLay
 
       lineCap: 'round',
       lineJoin: 'round',
-    }),
-    [opacity],
+      lineEmissiveStrength: dark ? 0.7 : 0,
+    } as LineLayerStyle),
+    [opacity, dark, colors],
   );
 
   return (

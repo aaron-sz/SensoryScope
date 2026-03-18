@@ -25,12 +25,12 @@ export const LightColors = {
   accentDark: '#1F6B5E',
   accentGlow: 'rgba(42, 140, 124, 0.15)',
 
-  calm: '#3ab98f',
-  moderate: '#ce9b43',
-  intense: '#d74c64',
+  calm: '#3ab98f',           // teal-green — inviting, safe
+  moderate: '#D4A72C',       // rich sunflower gold — clearly yellow, warm not muddy
+  intense: '#D4687A',        // dusty rose — noticeable but not alarming
   calmGlow: 'rgba(58, 185, 143, 0.12)',
-  moderateGlow: 'rgba(206, 155, 67, 0.12)',
-  intenseGlow: 'rgba(215, 76, 100, 0.12)',
+  moderateGlow: 'rgba(212, 167, 44, 0.12)',
+  intenseGlow: 'rgba(212, 104, 122, 0.12)',
 
   text: '#1E293B',
   textMuted: '#64748B',
@@ -38,36 +38,36 @@ export const LightColors = {
 };
 
 // ── Dark Mode ──────────────────────────────────────────────────────────────
-// Deep navy tones — easier on sensitive eyes than pure #000
+// Soft charcoal — Apple-style dark mode. Warm, breathable, not cave-black.
+// Tinted slightly toward slate-blue for cohesion with the teal accent.
 export const DarkColors: typeof LightColors = {
-  bg: '#080F1E',
-  surface: '#0F1826',
-  elevated: '#18243A',
-  border: '#1E2D40',
+  bg: '#151B23',         // warm charcoal, easy on eyes
+  surface: '#1C2530',    // one step up, clearly distinct from bg
+  elevated: '#253141',   // cards/sheets — visible lift without being bright
+  border: '#334155',     // slate-700 — actually visible dividers
 
-  primary: '#F1F5F9',
+  primary: '#E8EDF2',    // slightly warm off-white, not harsh #FFF
   primaryLight: '#94A3B8',
-  primaryDark: '#F8FAFC',
-  primaryGlow: 'rgba(241, 245, 249, 0.04)',
+  primaryDark: '#F1F5F9',
+  primaryGlow: 'rgba(232, 237, 242, 0.05)',
 
-  // Accent: blue-teal that is clearly distinct from calm (#10B981, green-teal)
-  // Previous value (#10B981) was identical to calm — UI elements and calm-scored
-  // data were visually indistinguishable. Now clearly different hue family.
-  accent: '#45BFB2',
-  accentLight: '#7DD5CF',
-  accentDark: '#2E8C86',
-  accentGlow: 'rgba(69, 191, 178, 0.20)',
+  // Accent: soft teal — reads as "brand" without neon glare
+  accent: '#5CC8BC',
+  accentLight: '#8EDAD2',
+  accentDark: '#3A9E94',
+  accentGlow: 'rgba(92, 200, 188, 0.18)',
 
-  calm: '#10B981',
-  moderate: '#F59E0B',
-  intense: '#F43F5E',
-  calmGlow: 'rgba(16, 185, 129, 0.18)',
-  moderateGlow: 'rgba(245, 158, 11, 0.18)',
-  intenseGlow: 'rgba(244, 63, 94, 0.18)',
+  // Sensory scale — lifted for dark backgrounds, same hue families as light.
+  calm: '#6EE7B7',        // soft mint
+  moderate: '#FFD966',    // bright clean yellow — sunny, not washed or orange
+  intense: '#F0899B',     // lifted dusty rose
+  calmGlow: 'rgba(110, 231, 183, 0.18)',
+  moderateGlow: 'rgba(255, 217, 102, 0.18)',
+  intenseGlow: 'rgba(240, 137, 155, 0.18)',
 
-  text: '#F1F5F9',
-  textMuted: '#94A3B8',
-  textDim: '#7A9AB8',   // Visible on dark navy — was #475569 which is near-invisible
+  text: '#E8EDF2',        // warm off-white
+  textMuted: '#9CA8B8',   // readable mid-tone
+  textDim: '#6B7D94',     // subtle but not invisible
 };
 
 
